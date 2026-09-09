@@ -1,121 +1,117 @@
 #!/bin/bash
-# Fratelanza Office Manager — Hostinger VPS one-shot install
-# Safe: isolated /opt/fratelanza-office, does NOT touch other projects
-#
-# Run on VPS as root:
-#   curl -fsSL https://raw.githubusercontent.com/Refaat1942/Nividia/main/deploy/hostinger/install.sh | bash
-#
-# Or after uploading project:
-#   cd /opt/fratelanza-office && bash deploy/hostinger/install.sh
-
+# Fratelanza Office Manager — one-command VPS install
+# Access ONLY via https://nividia.fratelanza.com (no public ports)
 set -e
 
 INSTALL_DIR="/opt/fratelanza-office"
 DOMAIN="nividia.fratelanza.com"
-REPO_URL="${REPO_URL:-https://github.com/Refaat1942/nividia.git}"
-FRONTEND_PORT_PREFERRED=16360
-BACKEND_PORT_PREFERRED=16361
+REPO_URL="https://github.com/Refaat1942/nividia.git"
 
-echo "=== Fratelanza Office Manager — Install ==="
-echo "Domain: $DOMAIN"
-echo "Install: $INSTALL_DIR"
+echo "=== Fratelanza Office Manager ==="
+echo "Domain: https://$DOMAIN"
 
-find_free_port() {
-  local p=$1
-  if ! ss -tlnp 2>/dev/null | grep -q ":${p} "; then
-    echo "$p"
-    return
-  fi
-  for port in $(seq 16362 16399); do
-    if ! ss -tlnp 2>/dev/null | grep -q ":${port} "; then
-      echo "$port"
-      return
-    fi
-  done
-  echo "ERROR: no free port" >&2
-  exit 1
-}
-
-FRONTEND_PORT=$(find_free_port $FRONTEND_PORT_PREFERRED)
-BACKEND_PORT=$(find_free_port $BACKEND_PORT_PREFERRED)
-echo "Ports: frontend=$FRONTEND_PORT backend=$BACKEND_PORT"
-
-if [ ! -f "$INSTALL_DIR/deploy/docker-compose.yml" ]; then
-  echo "Cloning repository..."
-  mkdir -p "$(dirname "$INSTALL_DIR")"
-  if [ -d "$INSTALL_DIR/.git" ]; then
-    cd "$INSTALL_DIR" && git pull origin main || git pull origin master
-  else
-    git clone "$REPO_URL" "$INSTALL_DIR"
-  fi
+# Clone or update
+if [ -d "$INSTALL_DIR/.git" ]; then
+  cd "$INSTALL_DIR" && git pull origin main
+else
+  rm -rf "$INSTALL_DIR"
+  git clone "$REPO_URL" "$INSTALL_DIR"
 fi
+
+# Fix Windows line endings (caused .env: \r: command not found)
+find "$INSTALL_DIR" -type f \( -name "*.sh" -o -name ".env*" -o -name "*.yml" -o -name "*.conf" \) \
+  -exec sed -i 's/\r$//' {} + 2>/dev/null || true
 
 cd "$INSTALL_DIR/deploy"
 
-if [ ! -f .env ]; then
-  cp .env.example .env
-  SECRET=$(openssl rand -hex 32)
-  DBPASS=$(openssl rand -hex 16)
-  ADMIN_PASS="${ADMIN_PASSWORD:-OfficeAdmin$(date +%s | tail -c 6)!}"
-  sed -i "s/change_this_to_a_long_random_secret_key/$SECRET/" .env
-  sed -i "s/change_this_strong_password/$DBPASS/" .env
-  sed -i "s/change_this_admin_password/$ADMIN_PASS/" .env
-  sed -i "s|http://127.0.0.1:16360|https://$DOMAIN|" .env
-  sed -i "s|http://127.0.0.1:16361|https://$DOMAIN|" .env
-  sed -i "s|office.fratelanza.com|$DOMAIN|g" .env
-  echo ""
-  echo "=== ADMIN CREDENTIALS (save these) ==="
-  grep ADMIN_EMAIL .env
-  echo "ADMIN_PASSWORD=$ADMIN_PASS"
-  echo "===================================="
-fi
+# Generate .env (never copy CRLF file)
+SECRET=$(openssl rand -hex 32)
+DBPASS=$(openssl rand -hex 16)
+ADMIN_PASS="${ADMIN_PASSWORD:-Office$(openssl rand -hex 4)!}"
 
-export FRONTEND_PORT="127.0.0.1:${FRONTEND_PORT}"
-export BACKEND_PORT="127.0.0.1:${BACKEND_PORT}"
-
-set -a
-source .env
-set +a
+cat > .env <<EOF
+POSTGRES_USER=office
+POSTGRES_PASSWORD=${DBPASS}
+POSTGRES_DB=fratelanza_office
+SECRET_KEY=${SECRET}
+ADMIN_EMAIL=admin@fratelanza.local
+ADMIN_PASSWORD=${ADMIN_PASS}
+ADMIN_NAME=مدير النظام
+FRONTEND_PORT=127.0.0.1:16360
+BACKEND_PORT=127.0.0.1:16361
+CORS_ORIGINS=https://${DOMAIN},http://${DOMAIN}
+NEXT_PUBLIC_API_URL=https://${DOMAIN}
+SEED_DEMO_DATA=false
+EOF
 
 chmod +x backup-db.sh restore-db.sh 2>/dev/null || true
+
+export FRONTEND_PORT=127.0.0.1:16360
+export BACKEND_PORT=127.0.0.1:16361
 
 docker compose --env-file .env -f docker-compose.yml down 2>/dev/null || true
 docker compose --env-file .env -f docker-compose.yml build
 docker compose --env-file .env -f docker-compose.yml up -d
 
-echo "Waiting for backend..."
-for i in $(seq 1 60); do
-  if curl -sf "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null 2>&1; then
-    echo "Backend OK"
+echo "Waiting for services..."
+for i in $(seq 1 90); do
+  if curl -sf http://127.0.0.1:16361/health >/dev/null 2>&1; then
+    echo "Backend ready."
     break
   fi
-  sleep 3
+  sleep 2
 done
 
-# Nginx — NEW file only
-NGINX_CONF="/etc/nginx/sites-available/nividia.fratelanza.com"
-if [ -f "$INSTALL_DIR/deploy/nginx-nividia.fratelanza.com.conf" ]; then
-  sed "s/127.0.0.1:16360/127.0.0.1:${FRONTEND_PORT}/g; s/127.0.0.1:16361/127.0.0.1:${BACKEND_PORT}/g" \
-    "$INSTALL_DIR/deploy/nginx-nividia.fratelanza.com.conf" > /tmp/nividia.nginx.conf
-  cp /tmp/nividia.nginx.conf "$NGINX_CONF"
-  ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/nividia.fratelanza.com
-  nginx -t && systemctl reload nginx
-  echo "Nginx configured for $DOMAIN"
-fi
+# Nginx — subdomain only (port 80/443), NEW file only
+cat > /etc/nginx/sites-available/nividia.fratelanza.com <<'NGINX'
+upstream nividia_frontend { server 127.0.0.1:16360; }
+upstream nividia_backend  { server 127.0.0.1:16361; }
 
-# SSL if certbot available and DNS resolves
+server {
+    listen 80;
+    listen [::]:80;
+    server_name nividia.fratelanza.com;
+    client_max_body_size 25M;
+
+    location /api/ {
+        proxy_pass http://nividia_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    location /health {
+        proxy_pass http://nividia_backend;
+    }
+
+    location / {
+        proxy_pass http://nividia_frontend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+NGINX
+
+ln -sf /etc/nginx/sites-available/nividia.fratelanza.com /etc/nginx/sites-enabled/nividia.fratelanza.com
+nginx -t && systemctl reload nginx
+
+# SSL
 if command -v certbot >/dev/null 2>&1; then
-  if getent hosts "$DOMAIN" >/dev/null 2>&1; then
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "${CERTBOT_EMAIL:-admin@fratelanza.com}" 2>/dev/null || \
-      echo "SSL: run manually: certbot --nginx -d $DOMAIN"
-  else
-    echo "DNS not ready for $DOMAIN — skip SSL for now"
-  fi
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
+    -m "${CERTBOT_EMAIL:-admin@fratelanza.com}" --redirect 2>/dev/null || true
 fi
 
 echo ""
-echo "=== DEPLOYMENT COMPLETE ==="
-echo "URL:      http://$DOMAIN/login"
-echo "Health:   http://127.0.0.1:${BACKEND_PORT}/health"
-echo "Frontend: http://127.0.0.1:${FRONTEND_PORT}"
+echo "============================================"
+echo "  DEPLOYMENT COMPLETE"
+echo "  URL:      https://$DOMAIN/login"
+echo "  Email:    admin@fratelanza.local"
+echo "  Password: $ADMIN_PASS"
+echo "============================================"
 docker compose -f docker-compose.yml ps
