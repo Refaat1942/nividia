@@ -34,6 +34,7 @@ PERMISSIONS = [
     ("rooms.view", "عرض الغرف", "rooms"),
     ("rooms.manage", "إدارة الغرف", "rooms"),
     ("rooms.book", "حجز غرف", "rooms"),
+    ("bookings.view", "عرض الحجوزات", "bookings"),
     ("offices.view", "عرض المكاتب", "offices"),
     ("offices.manage", "إدارة المكاتب", "offices"),
     ("contracts.view", "عرض العقود", "contracts"),
@@ -52,6 +53,10 @@ PERMISSIONS = [
     ("settings.manage", "إدارة الإعدادات", "settings"),
     ("audit.view", "عرض سجل العمليات", "audit"),
     ("hours.manage", "إدارة الساعات", "hours"),
+    ("sessions.view", "عرض الحضور", "sessions"),
+    ("sessions.checkin", "تسجيل حضور", "sessions"),
+    ("sessions.checkout", "تسجيل انصراف", "sessions"),
+    ("sessions.manage", "إدارة الجلسات", "sessions"),
 ]
 
 ROLES = {
@@ -66,7 +71,12 @@ ROLES = {
 ROLE_PERMS = {
     "super_admin": [p[0] for p in PERMISSIONS],
     "manager": [p[0] for p in PERMISSIONS if p[0] != "users.manage"],
-    "reception": ["customers.view", "customers.create", "customers.edit", "rooms.view", "rooms.book", "bookings.view", "documents.view", "documents.upload"],
+    "reception": [
+        "customers.view", "customers.create", "customers.edit",
+        "rooms.view", "rooms.book", "bookings.view", "packages.view",
+        "documents.view", "documents.upload",
+        "sessions.view", "sessions.checkin", "sessions.checkout",
+    ],
     "accountant": ["customers.view", "payments.view", "payments.create", "payments.edit", "reports.view", "reports.export"],
     "sales": ["customers.view", "customers.create", "packages.view", "contracts.view", "contracts.create"],
     "viewer": [p[0] for p in PERMISSIONS if ".view" in p[0]],
@@ -102,6 +112,7 @@ DEFAULT_SETTINGS = {
 def _ensure_user_schema() -> None:
     try:
         with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE contract_templates ADD COLUMN IF NOT EXISTS variables_json JSONB"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(50)"))
             conn.execute(text(
                 "UPDATE users SET username = LOWER(SPLIT_PART(email, '@', 1)) "

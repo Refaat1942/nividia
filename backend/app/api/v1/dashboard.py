@@ -7,6 +7,7 @@ from app.core.deps import CurrentUser, DbSession
 from app.models.entities import (
     Contract,
     Customer,
+    CustomerSession,
     CustomerStatus,
     CustomerSubscription,
     HoursTransaction,
@@ -16,6 +17,7 @@ from app.models.entities import (
     PaymentStatus,
     Room,
     RoomBooking,
+    SessionStatus,
     SubscriptionStatus,
 )
 
@@ -46,6 +48,15 @@ def dashboard_stats(db: DbSession, user: CurrentUser):
     available_rooms = db.scalar(select(func.count()).select_from(Room).where(Room.status == "available", Room.deleted_at.is_(None))) or 0
     today_bookings = db.scalar(
         select(func.count()).select_from(RoomBooking).where(RoomBooking.booking_date == today, RoomBooking.deleted_at.is_(None))
+    ) or 0
+    active_sessions = db.scalar(
+        select(func.count()).select_from(CustomerSession).where(
+            CustomerSession.status == SessionStatus.CHECKED_IN.value,
+            CustomerSession.check_out_at.is_(None),
+        )
+    ) or 0
+    today_sessions = db.scalar(
+        select(func.count()).select_from(CustomerSession).where(func.date(CustomerSession.check_in_at) == today)
     ) or 0
     monthly_revenue = db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
@@ -80,6 +91,8 @@ def dashboard_stats(db: DbSession, user: CurrentUser):
         "occupied_offices": occupied_offices,
         "available_rooms": available_rooms,
         "today_bookings": today_bookings,
+        "active_sessions": active_sessions,
+        "today_sessions": today_sessions,
         "monthly_revenue": float(monthly_revenue),
         "annual_revenue": float(annual_revenue),
         "used_hours": float(used_hours),

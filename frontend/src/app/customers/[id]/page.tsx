@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Layout from '@/components/Layout';
+import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
 
 export default function CustomerProfilePage() {
@@ -11,10 +12,23 @@ export default function CustomerProfilePage() {
   const [tab, setTab] = useState('info');
   const [bonusAmount, setBonusAmount] = useState('');
   const [bonusReason, setBonusReason] = useState('');
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [contracts, setContracts] = useState<any[]>([]);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
 
   useEffect(() => {
     api<any>(`/customers/${id}`).then(setCustomer).catch(console.error);
+    api<any>(`/sessions?customer_id=${id}`).then((d) => setSessions(d.items)).catch(console.error);
+    api<any>(`/contracts?customer_id=${id}`).then((d) => setContracts(d.items)).catch(console.error);
   }, [id]);
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    await api(`/customers/${id}`, { method: 'PATCH', body: JSON.stringify(editForm) });
+    setShowEdit(false);
+    api<any>(`/customers/${id}`).then(setCustomer);
+  }
 
   async function addBonus() {
     await api(`/customers/${id}/hours`, {
@@ -33,6 +47,7 @@ export default function CustomerProfilePage() {
     { key: 'info', label: 'بيانات العميل' },
     { key: 'hours', label: 'الساعات' },
     { key: 'contract', label: 'العقد' },
+    { key: 'sessions', label: 'الجلسات' },
   ];
 
   return (
@@ -51,8 +66,19 @@ export default function CustomerProfilePage() {
               )}
             </div>
           </div>
+          <button onClick={() => { setEditForm({ full_name: customer.full_name, phone: customer.phone, email: customer.email || '', address: customer.address || '', company_name: customer.company_name || '', status: customer.status }); setShowEdit(true); }} className="btn-secondary text-sm">تعديل البيانات</button>
         </div>
       </div>
+      <Modal open={showEdit} title="تعديل بيانات العميل" onClose={() => setShowEdit(false)}>
+        <form onSubmit={saveEdit} className="grid grid-cols-2 gap-4">
+          <input className="input" value={editForm.full_name || ''} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
+          <input className="input" value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+          <input className="input" value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+          <input className="input" value={editForm.company_name || ''} onChange={(e) => setEditForm({ ...editForm, company_name: e.target.value })} />
+          <input className="input col-span-2" value={editForm.address || ''} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
+          <button type="submit" className="btn-primary col-span-2">حفظ</button>
+        </form>
+      </Modal>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="card text-center"><p className="text-xs text-slate-500">إجمالي الساعات</p><p className="text-2xl font-bold text-blue-700">{hours.total_available || 0}</p></div>
         <div className="card text-center"><p className="text-xs text-slate-500">ساعات البونص</p><p className="text-2xl font-bold text-purple-700">{hours.bonus_hours || 0}</p></div>
@@ -87,6 +113,63 @@ export default function CustomerProfilePage() {
             <input className="input" placeholder="السبب" value={bonusReason} onChange={(e) => setBonusReason(e.target.value)} />
             <button onClick={addBonus} className="btn-primary whitespace-nowrap">إضافة</button>
           </div>
+        </div>
+      )}
+      {tab === 'contract' && (
+        <div className="card overflow-x-auto">
+          <h3 className="font-semibold mb-4">عقود العميل</h3>
+          <table className="w-full text-sm">
+            <thead><tr className="table-head">
+              <th className="p-3 text-right">رقم العقد</th><th className="p-3 text-right">الحالة</th><th className="p-3 text-right">البداية</th><th className="p-3 text-right">النهاية</th>
+            </tr></thead>
+            <tbody>
+              {contracts.map((c) => (
+                <tr key={c.id} className="border-t">
+                  <td className="p-3">{c.contract_number}</td>
+                  <td className="p-3">{c.status}</td>
+                  <td className="p-3">{c.start_date || '—'}</td>
+                  <td className="p-3">{c.end_date || '—'}</td>
+                </tr>
+              ))}
+              {contracts.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-500">لا توجد عقود</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {tab === 'sessions' && (
+        <div className="card overflow-x-auto">
+          <h3 className="font-semibold mb-4">سجل الحضور والانصراف</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="table-head">
+                <th className="p-3 text-right">التاريخ</th>
+                <th className="p-3 text-right">الحضور</th>
+                <th className="p-3 text-right">الانصراف</th>
+                <th className="p-3 text-right">المدة</th>
+                <th className="p-3 text-right">الخصم</th>
+                <th className="p-3 text-right">الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id} className="border-t">
+                  <td className="p-3">{s.check_in_at ? new Date(s.check_in_at).toLocaleDateString('ar-EG') : '—'}</td>
+                  <td className="p-3">{s.check_in_at ? new Date(s.check_in_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                  <td className="p-3">{s.check_out_at ? new Date(s.check_out_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                  <td className="p-3">{s.duration_minutes != null ? `${s.duration_minutes} د` : '—'}</td>
+                  <td className="p-3">{s.hours_deducted != null ? `${s.hours_deducted} س` : '—'}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-1 rounded text-xs ${s.status === 'checked_in' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {s.status === 'checked_in' ? 'حاضر' : 'منصرف'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {sessions.length === 0 && (
+                <tr><td colSpan={6} className="p-6 text-center text-slate-500">لا توجد جلسات</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </Layout>

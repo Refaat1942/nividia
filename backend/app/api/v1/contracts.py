@@ -2,16 +2,23 @@ import os
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession, get_client_ip
-from app.models.entities import Contract, ContractTemplate, ContractTemplateVariable, Customer, Office, Package, Room
+from app.models.entities import Contract, ContractTemplate, Customer, Office, Package, Room
 from app.services.audit import log_audit
-from app.services.contracts import build_contract_context, generate_contract_docx
+from app.services.contracts import (
+    build_contract_context,
+    generate_contract_docx,
+    get_available_context_keys,
+    render_contract_for_customer,
+    scan_and_store_template_fields,
+)
+from app.services.docx_fields import FIELD_LABELS_AR
 
 router = APIRouter(prefix="/contracts", tags=["العقود"])
 settings = get_settings()
@@ -25,6 +32,22 @@ class ContractGenerateRequest(BaseModel):
     room_id: uuid.UUID | None = None
     start_date: str | None = None
     end_date: str | None = None
+    extra_fields: dict[str, str] | None = None
+
+
+class ContractUpdate(BaseModel):
+    status: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    package_id: uuid.UUID | None = None
+    office_id: uuid.UUID | None = None
+    room_id: uuid.UUID | None = None
+
+
+class TemplateUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
 
 
 def _next_contract_number(db) -> str:
@@ -32,22 +55,61 @@ def _next_contract_number(db) -> str:
     return f"CTR-{date.today().year}-{str(count + 1).zfill(5)}"
 
 
+def _template_dict(tpl: ContractTemplate) -> dict:
+    return {
+        "id": str(tpl.id),
+        "name": tpl.name,
+        "description": tpl.description,
+        "version": tpl.version,
+        "is_active": tpl.is_active,
+        "variables_json": tpl.variables_json,
+        "created_at": tpl.created_at.isoformat() if tpl.created_at else None,
+    }
+
+
+def _contract_dict(c: Contract, customer: Customer | None = None) -> dict:
+    return {
+        "id": str(c.id),
+        "contract_number": c.contract_number,
+        "customer_id": str(c.customer_id),
+        "customer_name": customer.full_name if customer else None,
+        "template_id": str(c.template_id) if c.template_id else None,
+        "package_id": str(c.package_id) if c.package_id else None,
+        "office_id": str(c.office_id) if c.office_id else None,
+        "room_id": str(c.room_id) if c.room_id else None,
+        "start_date": str(c.start_date) if c.start_date else None,
+        "end_date": str(c.end_date) if c.end_date else None,
+        "status": c.status,
+        "metadata_json": c.metadata_json,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
+
+
 @router.get("/templates")
 def list_templates(db: DbSession, user: CurrentUser):
-    items = db.scalars(select(ContractTemplate).where(ContractTemplate.is_active.is_(True)).order_by(ContractTemplate.name)).all()
-    return {"items": items}
+    items = db.scalars(
+        select(ContractTemplate).where(ContractTemplate.is_active.is_(True)).order_by(ContractTemplate.name)
+    ).all()
+    return {"items": [_template_dict(t) for t in items]}
+
+
+@router.get("/templates/{template_id}")
+def get_template(template_id: uuid.UUID, db: DbSession, user: CurrentUser):
+    tpl = db.get(ContractTemplate, template_id)
+    if not tpl:
+        raise HTTPException(404, "القالب غير موجود")
+    return _template_dict(tpl)
 
 
 @router.get("/variables")
 def list_variables(db: DbSession, user: CurrentUser):
-    items = db.scalars(select(ContractTemplateVariable).where(ContractTemplateVariable.is_active.is_(True))).all()
-    return {"items": items}
+    return {"items": get_available_context_keys()}
 
 
 @router.post("/templates", status_code=201)
 async def upload_template(
     request: Request, db: DbSession, user: CurrentUser,
-    name: str, description: str | None = None,
+    name: str = Form(...), description: str | None = Form(None),
     file: UploadFile = File(...),
 ):
     if not file.filename or not file.filename.lower().endswith(".docx"):
@@ -59,11 +121,84 @@ async def upload_template(
         f.write(content)
     tpl = ContractTemplate(name=name, description=description, file_path=path, created_by=user.id)
     db.add(tpl)
+    db.flush()
+    fields = scan_and_store_template_fields(db, tpl)
     log_audit(db, user_id=user.id, action="upload", module="contract_templates", record_id=str(tpl.id),
-              ip_address=get_client_ip(request))
+              new_value={"name": name, "fields_detected": len(fields)}, ip_address=get_client_ip(request))
     db.commit()
     db.refresh(tpl)
-    return tpl
+    result = _template_dict(tpl)
+    result["detected_fields"] = fields
+    return result
+
+
+@router.patch("/templates/{template_id}")
+def update_template(template_id: uuid.UUID, data: TemplateUpdate, request: Request, db: DbSession, user: CurrentUser):
+    tpl = db.get(ContractTemplate, template_id)
+    if not tpl:
+        raise HTTPException(404, "القالب غير موجود")
+    updates = data.model_dump(exclude_unset=True)
+    for k, v in updates.items():
+        setattr(tpl, k, v)
+    log_audit(db, user_id=user.id, action="update", module="contract_templates", record_id=str(template_id),
+              new_value=updates, ip_address=get_client_ip(request))
+    db.commit()
+    return _template_dict(tpl)
+
+
+@router.post("/templates/{template_id}/rescan")
+def rescan_template(template_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    tpl = db.get(ContractTemplate, template_id)
+    if not tpl or not os.path.exists(tpl.file_path):
+        raise HTTPException(404, "القالب غير موجود")
+    fields = scan_and_store_template_fields(db, tpl)
+    db.commit()
+    return {"fields": fields, "variables_json": tpl.variables_json}
+
+
+@router.get("/preview-context")
+def preview_context(
+    db: DbSession, user: CurrentUser,
+    customer_id: uuid.UUID,
+    template_id: uuid.UUID | None = None,
+    package_id: uuid.UUID | None = None,
+    office_id: uuid.UUID | None = None,
+    room_id: uuid.UUID | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        raise HTTPException(404, "العميل غير موجود")
+    package = db.get(Package, package_id) if package_id else None
+    office = db.get(Office, office_id) if office_id else None
+    room = db.get(Room, room_id) if room_id else None
+    contract_stub = Contract(
+        contract_number="PREVIEW",
+        customer_id=customer_id,
+        start_date=date.fromisoformat(start_date) if start_date else None,
+        end_date=date.fromisoformat(end_date) if end_date else None,
+    )
+    template = db.get(ContractTemplate, template_id) if template_id else None
+    if template:
+        base, render = render_contract_for_customer(db, template, customer, package, office, room, contract_stub)
+        fields = (template.variables_json or {}).get("fields", [])
+        preview = []
+        for f in fields:
+            raw = f.get("raw")
+            canonical = f.get("canonical")
+            preview.append({
+                "field": raw,
+                "label_ar": f.get("label_ar") or FIELD_LABELS_AR.get(canonical or "", raw),
+                "value": render.get(raw) or (base.get(canonical or "") if canonical else ""),
+                "auto_mapped": f.get("auto_mapped", False),
+            })
+        return {"context": base, "render_context": render, "fields": preview}
+    base = build_contract_context(db, customer, package, office, room, contract_stub)
+    return {
+        "context": base,
+        "fields": [{"field": k, "label_ar": FIELD_LABELS_AR.get(k, k), "value": v, "auto_mapped": True} for k, v in base.items()],
+    }
 
 
 @router.post("/generate", status_code=201)
@@ -92,25 +227,72 @@ def generate_contract(data: ContractGenerateRequest, request: Request, db: DbSes
     )
     db.add(contract)
     db.flush()
-    ctx = build_contract_context(db, customer, package, office, room, contract)
+    base, render_ctx = render_contract_for_customer(
+        db, template, customer, package, office, room, contract, data.extra_fields
+    )
     os.makedirs(os.path.join(settings.UPLOAD_DIR, "contracts"), exist_ok=True)
     out_path = os.path.join(settings.UPLOAD_DIR, "contracts", f"{contract.contract_number}.docx")
-    generate_contract_docx(template.file_path, out_path, ctx)
+    generate_contract_docx(template.file_path, out_path, render_ctx)
     contract.generated_file_path = out_path
-    contract.metadata_json = ctx
+    contract.metadata_json = {"base": base, "render": render_ctx}
     log_audit(db, user_id=user.id, action="generate", module="contracts", record_id=str(contract.id),
               new_value={"contract_number": contract.contract_number}, ip_address=get_client_ip(request))
     db.commit()
     db.refresh(contract)
-    return contract
+    return _contract_dict(contract, customer)
 
 
 @router.get("")
 def list_contracts(db: DbSession, user: CurrentUser, customer_id: uuid.UUID | None = None):
-    q = select(Contract).where(Contract.deleted_at.is_(None))
+    q = select(Contract, Customer).join(Customer, Contract.customer_id == Customer.id).where(Contract.deleted_at.is_(None))
     if customer_id:
         q = q.where(Contract.customer_id == customer_id)
-    return {"items": db.scalars(q.order_by(Contract.created_at.desc())).all()}
+    rows = db.execute(q.order_by(Contract.created_at.desc())).all()
+    return {"items": [_contract_dict(c, cust) for c, cust in rows]}
+
+
+@router.patch("/{contract_id}")
+def update_contract(contract_id: uuid.UUID, data: ContractUpdate, request: Request, db: DbSession, user: CurrentUser):
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    updates = data.model_dump(exclude_unset=True)
+    if "start_date" in updates and updates["start_date"]:
+        updates["start_date"] = date.fromisoformat(updates["start_date"])
+    if "end_date" in updates and updates["end_date"]:
+        updates["end_date"] = date.fromisoformat(updates["end_date"])
+    for k, v in updates.items():
+        setattr(contract, k, v)
+    log_audit(db, user_id=user.id, action="update", module="contracts", record_id=str(contract_id),
+              new_value={k: str(v) for k, v in updates.items()}, ip_address=get_client_ip(request))
+    db.commit()
+    customer = db.get(Customer, contract.customer_id)
+    return _contract_dict(contract, customer)
+
+
+@router.post("/{contract_id}/regenerate")
+def regenerate_contract(contract_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    template = db.get(ContractTemplate, contract.template_id) if contract.template_id else None
+    if not template:
+        raise HTTPException(400, "لا يوجد قالب مرتبط")
+    customer = db.get(Customer, contract.customer_id)
+    package = db.get(Package, contract.package_id) if contract.package_id else None
+    office = db.get(Office, contract.office_id) if contract.office_id else None
+    room = db.get(Room, contract.room_id) if contract.room_id else None
+    base, render_ctx = render_contract_for_customer(db, template, customer, package, office, room, contract)
+    out_path = contract.generated_file_path or os.path.join(
+        settings.UPLOAD_DIR, "contracts", f"{contract.contract_number}.docx"
+    )
+    generate_contract_docx(template.file_path, out_path, render_ctx)
+    contract.generated_file_path = out_path
+    contract.metadata_json = {"base": base, "render": render_ctx}
+    log_audit(db, user_id=user.id, action="regenerate", module="contracts", record_id=str(contract_id),
+              ip_address=get_client_ip(request))
+    db.commit()
+    return _contract_dict(contract, customer)
 
 
 @router.get("/{contract_id}/download")
@@ -118,4 +300,51 @@ def download_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
     contract = db.get(Contract, contract_id)
     if not contract or not contract.generated_file_path or not os.path.exists(contract.generated_file_path):
         raise HTTPException(404, "العقد غير موجود")
-    return FileResponse(contract.generated_file_path, filename=f"{contract.contract_number}.docx")
+    return FileResponse(
+        contract.generated_file_path,
+        filename=f"{contract.contract_number}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@router.get("/{contract_id}/print", response_class=HTMLResponse)
+def print_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    customer = db.get(Customer, contract.customer_id)
+    meta = contract.metadata_json or {}
+    fields = meta.get("render") or meta.get("base") or {}
+    if not fields and customer:
+        fields = build_contract_context(db, customer, contract=contract)
+
+    rows = ""
+    for key, value in fields.items():
+        label = FIELD_LABELS_AR.get(key, key)
+        rows += f"<tr><td style='padding:8px;border:1px solid #ddd;font-weight:bold;width:35%'>{label}</td><td style='padding:8px;border:1px solid #ddd'>{value}</td></tr>"
+
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8">
+  <title>عقد {contract.contract_number}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; padding: 40px; color: #1e293b; }}
+    h1 {{ text-align: center; margin-bottom: 8px; }}
+    .sub {{ text-align: center; color: #64748b; margin-bottom: 32px; }}
+    table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; }}
+    .actions {{ text-align: center; margin: 24px; }}
+    button {{ background: #1e40af; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; }}
+    @media print {{ .actions {{ display: none; }} }}
+  </style>
+</head>
+<body>
+  <h1>عقد رقم {contract.contract_number}</h1>
+  <p class="sub">العميل: {customer.full_name if customer else '—'}</p>
+  <table>{rows}</table>
+  <div class="actions">
+    <button onclick="window.print()">طباعة</button>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(html)

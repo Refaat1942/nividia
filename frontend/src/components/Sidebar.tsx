@@ -4,35 +4,31 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { logout } from '@/lib/api';
-
-const navItems = [
-  { href: '/dashboard', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/customers', label: 'العملاء', icon: '👥' },
-  { href: '/packages', label: 'الباقات', icon: '📦' },
-  { href: '/offices', label: 'المكاتب', icon: '🏢' },
-  { href: '/rooms', label: 'غرف الاجتماعات', icon: '🚪' },
-  { href: '/bookings', label: 'الحجوزات', icon: '📅' },
-  { href: '/contracts', label: 'العقود', icon: '📄' },
-  { href: '/documents', label: 'المستندات', icon: '📁' },
-  { href: '/payments', label: 'المدفوعات', icon: '💰' },
-  { href: '/hours', label: 'الساعات', icon: '⏱️' },
-  { href: '/reports', label: 'التقارير', icon: '📈' },
-  { href: '/users', label: 'المستخدمون والصلاحيات', icon: '🔐' },
-  { href: '/audit', label: 'سجل العمليات', icon: '📋' },
-  { href: '/settings', label: 'الإعدادات', icon: '⚙️' },
-];
+import { useAuth } from '@/lib/auth';
+import { NAV_ITEMS } from '@/lib/nav';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, hasPermission } = useAuth();
+
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (!item.permission) return true;
+    return hasPermission(item.permission);
+  });
 
   return (
     <aside className="w-64 min-h-screen bg-sidebar text-white flex flex-col fixed right-0 top-0 z-40">
       <div className="p-6 border-b border-slate-700">
         <h1 className="text-lg font-bold">فراتيلانزا</h1>
         <p className="text-xs text-slate-400 mt-1">نظام إدارة المكاتب</p>
+        {user && (
+          <p className="text-xs text-slate-300 mt-2 truncate" title={user.full_name}>
+            {user.full_name}
+          </p>
+        )}
       </div>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
+        {visibleItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}

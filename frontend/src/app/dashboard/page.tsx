@@ -25,6 +25,8 @@ export default function DashboardPage() {
     { label: 'مكاتب مؤجرة', value: stats.occupied_offices, icon: '🔒', color: 'bg-slate-50 text-slate-700' },
     { label: 'غرف متاحة', value: stats.available_rooms, icon: '🚪', color: 'bg-indigo-50 text-indigo-700' },
     { label: 'حجوزات اليوم', value: stats.today_bookings, icon: '📅', color: 'bg-rose-50 text-rose-700' },
+    { label: 'حاضرون الآن', value: stats.active_sessions, icon: '🟢', color: 'bg-lime-50 text-lime-700' },
+    { label: 'جلسات اليوم', value: stats.today_sessions, icon: '🕐', color: 'bg-violet-50 text-violet-700' },
     { label: 'إيرادات الشهر', value: `${stats.monthly_revenue?.toLocaleString('ar-EG') || 0} ج.م`, icon: '💰', color: 'bg-emerald-50 text-emerald-700' },
     { label: 'الساعات المستخدمة', value: stats.used_hours, icon: '⏱️', color: 'bg-orange-50 text-orange-700' },
     { label: 'الساعات المتبقية', value: stats.remaining_hours, icon: '⏳', color: 'bg-cyan-50 text-cyan-700' },

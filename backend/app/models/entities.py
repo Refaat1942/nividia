@@ -132,6 +132,7 @@ class Customer(Base):
     payments: Mapped[list["Payment"]] = relationship(back_populates="customer")
     contracts: Mapped[list["Contract"]] = relationship(back_populates="customer")
     bookings: Mapped[list["RoomBooking"]] = relationship(back_populates="customer")
+    sessions: Mapped[list["CustomerSession"]] = relationship(back_populates="customer")
 
 
 class PackageType(str, enum.Enum):
@@ -231,6 +232,37 @@ class HoursTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     customer: Mapped["Customer"] = relationship(back_populates="hours_transactions")
+
+
+class SessionStatus(str, enum.Enum):
+    CHECKED_IN = "checked_in"
+    CHECKED_OUT = "checked_out"
+    AUTO_CLOSED = "auto_closed"
+
+
+class CustomerSession(Base):
+    __tablename__ = "customer_sessions"
+    __table_args__ = (
+        Index("ix_sessions_customer_status", "customer_id", "status"),
+        Index("ix_sessions_check_in", "check_in_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id"), index=True)
+    office_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("offices.id"), nullable=True)
+    room_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rooms.id"), nullable=True)
+    check_in_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    check_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hours_deducted: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    hours_transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("hours_transactions.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default=SessionStatus.CHECKED_IN.value, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checked_in_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    checked_out_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    customer: Mapped["Customer"] = relationship(back_populates="sessions")
 
 
 class OfficeStatus(str, enum.Enum):
@@ -354,6 +386,7 @@ class ContractTemplate(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     file_path: Mapped[str] = mapped_column(String(500))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    variables_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

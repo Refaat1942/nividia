@@ -24,6 +24,15 @@ class PaymentCreate(BaseModel):
     notes: str | None = None
 
 
+class PaymentUpdate(BaseModel):
+    amount: Decimal | None = None
+    payment_date: str | None = None
+    payment_method: str | None = None
+    reference: str | None = None
+    status: str | None = None
+    notes: str | None = None
+
+
 @router.get("")
 def list_payments(db: DbSession, user: CurrentUser, customer_id: uuid.UUID | None = None, status: str | None = None):
     q = select(Payment)
@@ -52,6 +61,23 @@ def create_payment(data: PaymentCreate, request: Request, db: DbSession, user: C
     db.add(payment)
     log_audit(db, user_id=user.id, action="create", module="payments", record_id=str(payment.id),
               new_value=data.model_dump(), ip_address=get_client_ip(request))
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.patch("/{payment_id}")
+def update_payment(payment_id: uuid.UUID, data: PaymentUpdate, request: Request, db: DbSession, user: CurrentUser):
+    payment = db.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(404, "الدفعة غير موجودة")
+    updates = data.model_dump(exclude_unset=True)
+    if "payment_date" in updates and updates["payment_date"]:
+        updates["payment_date"] = date.fromisoformat(updates["payment_date"])
+    for k, v in updates.items():
+        setattr(payment, k, v)
+    log_audit(db, user_id=user.id, action="update", module="payments", record_id=str(payment_id),
+              new_value={k: str(v) for k, v in updates.items()}, ip_address=get_client_ip(request))
     db.commit()
     db.refresh(payment)
     return payment

@@ -4,7 +4,8 @@ set -e
 INSTALL_DIR="/opt/fratelanza-office"
 DOMAIN="nividia.fratelanza.com"
 REPO_URL="https://github.com/Refaat1942/nividia.git"
-SECRETS_FILE="${INSTALL_DIR}/deploy/.secrets"
+DEPLOY_DIR="${INSTALL_DIR}/deploy"
+SECRETS_FILE="${DEPLOY_DIR}/.secrets"
 
 echo "=== Fratelanza Office Manager ==="
 echo "Domain: https://${DOMAIN}"
@@ -16,51 +17,21 @@ else
   git clone "${REPO_URL}" "${INSTALL_DIR}"
 fi
 
-cd "${INSTALL_DIR}/deploy"
+cd "${DEPLOY_DIR}"
+source hostinger/write-env.sh
 
-# Load existing secrets OR generate new ones (never rotate DB password on existing volume)
 if [ -f "${SECRETS_FILE}" ]; then
   echo "Using saved credentials from .secrets"
-  POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' "${SECRETS_FILE}" | cut -d= -f2-)
-  SECRET_KEY=$(grep '^SECRET_KEY=' "${SECRETS_FILE}" | cut -d= -f2-)
-  ADMIN_PASS=$(grep '^ADMIN_PASSWORD=' "${SECRETS_FILE}" | cut -d= -f2-)
-  ADMIN_USER=$(grep '^ADMIN_USERNAME=' "${SECRETS_FILE}" | cut -d= -f2-)
-  ADMIN_USER="${ADMIN_USER:-admin}"
+  load_or_create_secrets "${SECRETS_FILE}"
 else
   echo "First install — generating new credentials"
-  SECRET_KEY=$(openssl rand -hex 32)
-  POSTGRES_PASSWORD=$(openssl rand -hex 16)
-  ADMIN_USER="${ADMIN_USERNAME:-admin}"
-  if [ -n "${ADMIN_PASSWORD}" ]; then
-    ADMIN_PASS="${ADMIN_PASSWORD}"
-  else
-    ADMIN_PASS="Office$(openssl rand -hex 4)"
-  fi
-  mkdir -p "$(dirname "${SECRETS_FILE}")"
-  cat > "${SECRETS_FILE}" <<EOF
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-SECRET_KEY=${SECRET_KEY}
-ADMIN_PASSWORD=${ADMIN_PASS}
-ADMIN_USERNAME=${ADMIN_USER}
-EOF
-  chmod 600 "${SECRETS_FILE}"
+  generate_secrets
+  save_secrets "${SECRETS_FILE}"
 fi
 
-export POSTGRES_USER=office
-export POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
-export POSTGRES_DB=fratelanza_office
-export SECRET_KEY="${SECRET_KEY}"
-export ADMIN_USERNAME="${ADMIN_USER}"
-export ADMIN_PASSWORD="${ADMIN_PASS}"
-export ADMIN_NAME="System Admin"
-export ADMIN_EMAIL=""
-export FRONTEND_PORT="127.0.0.1:16360"
-export BACKEND_PORT="127.0.0.1:16361"
-export CORS_ORIGINS="https://${DOMAIN},http://${DOMAIN}"
-export NEXT_PUBLIC_API_URL="https://${DOMAIN}"
-export SEED_DEMO_DATA=false
+write_deploy_env "${DEPLOY_DIR}"
 
-chmod +x backup-db.sh restore-db.sh hostinger/repair.sh 2>/dev/null || true
+chmod +x postgres-entrypoint.sh backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
 
 docker compose -f docker-compose.yml down 2>/dev/null || true
 
@@ -92,7 +63,7 @@ if ! curl -sf http://127.0.0.1:16361/health >/dev/null 2>&1; then
   echo "ERROR: Backend still not healthy. Logs:"
   docker compose -f docker-compose.yml logs --tail=40 backend
   echo ""
-  echo "Try: bash ${INSTALL_DIR}/deploy/hostinger/repair.sh"
+  echo "Try: bash ${DEPLOY_DIR}/hostinger/repair.sh"
   exit 1
 fi
 
@@ -142,7 +113,7 @@ echo ""
 echo "============================================"
 echo "  DEPLOYMENT COMPLETE"
 echo "  URL:      https://${DOMAIN}/login"
-echo "  Username: ${ADMIN_USER}"
-echo "  Password: ${ADMIN_PASS}"
+echo "  Username: ${ADMIN_USERNAME}"
+echo "  Password: ${ADMIN_PASSWORD}"
 echo "============================================"
 docker compose -f docker-compose.yml ps

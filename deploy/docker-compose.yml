@@ -5,12 +5,16 @@ services:
     image: postgres:16-alpine
     container_name: fratelanza-office-postgres
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-office}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-fratelanza_office}
     volumes:
       - fratelanza_office_postgres_data:/var/lib/postgresql/data
+      - ./postgres-entrypoint.sh:/postgres-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/postgres-entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-office} -d ${POSTGRES_DB:-fratelanza_office}"]
       interval: 10s
@@ -25,6 +29,8 @@ services:
       dockerfile: Dockerfile
     container_name: fratelanza-office-backend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-office}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fratelanza_office}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
@@ -79,6 +85,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       PGHOST: postgres
       PGUSER: ${POSTGRES_USER:-office}

@@ -16,6 +16,7 @@ from app.api.v1 import (
     reports,
     rooms,
     search,
+    sessions,
     settings,
     users,
 )
@@ -28,6 +29,7 @@ api_router.include_router(packages.router)
 api_router.include_router(rooms.router)
 api_router.include_router(offices.router)
 api_router.include_router(bookings.router)
+api_router.include_router(sessions.router)
 api_router.include_router(contracts.router)
 api_router.include_router(documents.router)
 api_router.include_router(payments.router)

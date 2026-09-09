@@ -27,6 +27,17 @@ class BookingCreate(BaseModel):
     notes: str | None = None
 
 
+class BookingUpdate(BaseModel):
+    booking_date: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    hours: float | None = None
+    price: float | None = None
+    booking_status: str | None = None
+    payment_status: str | None = None
+    notes: str | None = None
+
+
 @router.get("")
 def list_bookings(
     db: DbSession, user: CurrentUser,
@@ -85,6 +96,31 @@ def create_booking(data: BookingCreate, request: Request, db: DbSession, user: C
             raise HTTPException(400, str(e))
     log_audit(db, user_id=user.id, action="create", module="bookings", record_id=str(booking.id),
               new_value=data.model_dump(), ip_address=get_client_ip(request))
+    db.commit()
+    db.refresh(booking)
+    return booking
+
+
+@router.patch("/{booking_id}")
+def update_booking(booking_id: uuid.UUID, data: BookingUpdate, request: Request, db: DbSession, user: CurrentUser):
+    booking = db.get(RoomBooking, booking_id)
+    if not booking or booking.deleted_at:
+        raise HTTPException(404, "الحجز غير موجود")
+    updates = data.model_dump(exclude_unset=True)
+    if "booking_date" in updates and updates["booking_date"]:
+        updates["booking_date"] = date.fromisoformat(updates["booking_date"])
+    if "start_time" in updates and updates["start_time"]:
+        updates["start_time"] = time.fromisoformat(updates["start_time"])
+    if "end_time" in updates and updates["end_time"]:
+        updates["end_time"] = time.fromisoformat(updates["end_time"])
+    if "hours" in updates and updates["hours"] is not None:
+        updates["hours"] = Decimal(str(updates["hours"]))
+    if "price" in updates and updates["price"] is not None:
+        updates["price"] = Decimal(str(updates["price"]))
+    for k, v in updates.items():
+        setattr(booking, k, v)
+    log_audit(db, user_id=user.id, action="update", module="bookings", record_id=str(booking_id),
+              new_value={k: str(v) for k, v in updates.items()}, ip_address=get_client_ip(request))
     db.commit()
     db.refresh(booking)
     return booking

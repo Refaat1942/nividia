@@ -46,11 +46,52 @@ export async function login(username: string, password: string) {
 }
 
 export async function getMe() {
-  return api<{ username: string; full_name: string; permissions: string[]; roles: string[] }>('/auth/me');
+  return api<{ username: string; full_name: string; permissions: string[]; roles: string[]; is_superuser: boolean }>('/auth/me');
 }
 
 export function logout() {
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
   window.location.href = '/login';
+}
+
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: formData });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'خطأ في الخادم' }));
+    throw new Error(typeof err.detail === 'string' ? err.detail : 'خطأ في الرفع');
+  }
+  return res.json();
+}
+
+export async function downloadFile(path: string, filename: string) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error('فشل التحميل');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function openPrintPage(path: string) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error('فشل فتح صفحة الطباعة');
+  const html = await res.text();
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
 }

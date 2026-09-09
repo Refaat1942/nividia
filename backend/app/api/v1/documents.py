@@ -1,7 +1,7 @@
 import os
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -13,6 +13,13 @@ from app.services.audit import log_audit
 
 router = APIRouter(prefix="/documents", tags=["المستندات"])
 settings = get_settings()
+
+
+class DocumentUpdate(BaseModel):
+    name: str | None = None
+    document_type: str | None = None
+    notes: str | None = None
+    expiration_date: str | None = None
 
 
 @router.get("")
@@ -28,8 +35,8 @@ def list_documents(db: DbSession, user: CurrentUser, customer_id: uuid.UUID | No
 @router.post("", status_code=201)
 async def upload_document(
     request: Request, db: DbSession, user: CurrentUser,
-    customer_id: uuid.UUID, name: str, document_type: str,
-    notes: str | None = None, expiration_date: str | None = None,
+    customer_id: uuid.UUID = Form(...), name: str = Form(...), document_type: str = Form(...),
+    notes: str | None = Form(None), expiration_date: str | None = Form(None),
     file: UploadFile = File(...),
 ):
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -63,6 +70,24 @@ def download_document(document_id: uuid.UUID, db: DbSession, user: CurrentUser):
     if not doc or doc.deleted_at or not os.path.exists(doc.file_path):
         raise HTTPException(404, "المستند غير موجود")
     return FileResponse(doc.file_path, filename=doc.name)
+
+
+@router.patch("/{document_id}")
+def update_document(document_id: uuid.UUID, data: DocumentUpdate, request: Request, db: DbSession, user: CurrentUser):
+    doc = db.get(Document, document_id)
+    if not doc or doc.deleted_at:
+        raise HTTPException(404, "المستند غير موجود")
+    updates = data.model_dump(exclude_unset=True)
+    if "expiration_date" in updates:
+        from datetime import date
+        updates["expiration_date"] = date.fromisoformat(updates["expiration_date"]) if updates["expiration_date"] else None
+    for k, v in updates.items():
+        setattr(doc, k, v)
+    log_audit(db, user_id=user.id, action="update", module="documents", record_id=str(document_id),
+              new_value=updates, ip_address=get_client_ip(request))
+    db.commit()
+    db.refresh(doc)
+    return doc
 
 
 @router.delete("/{document_id}")
