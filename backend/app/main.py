@@ -67,4 +67,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": settings.APP_NAME, "version": settings.APP_VERSION}
+    return {
+        "status": "ok",
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "features": ["public_logo", "admin_auto_repair", "open_users_api"],
+    }

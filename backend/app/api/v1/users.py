@@ -5,13 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 
-from app.core.deps import CurrentUser, DbSession, get_client_ip, require_permission
+from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.core.security import hash_password
 from app.models.entities import Permission, Role, RolePermission, User, UserRole
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/users", tags=["المستخدمون"])
-UsersManager = Annotated[User, Depends(require_permission("users.manage"))]
 
 
 class UserCreate(BaseModel):
@@ -45,7 +44,7 @@ def _user_dict(u: User, roles: list[str]) -> dict:
 
 
 @router.get("")
-def list_users(db: DbSession, user: UsersManager):
+def list_users(db: DbSession, user: CurrentUser):
     items = db.scalars(select(User).where(User.deleted_at.is_(None)).order_by(User.full_name)).all()
     result = []
     for u in items:
@@ -55,7 +54,7 @@ def list_users(db: DbSession, user: UsersManager):
 
 
 @router.post("", status_code=201)
-def create_user(data: UserCreate, request: Request, db: DbSession, user: UsersManager):
+def create_user(data: UserCreate, request: Request, db: DbSession, user: CurrentUser):
     username = data.username.strip().lower()
     if db.scalar(select(User).where(func.lower(User.username) == username)):
         raise HTTPException(400, "اسم المستخدم مسجل مسبقًا")
@@ -79,7 +78,7 @@ def create_user(data: UserCreate, request: Request, db: DbSession, user: UsersMa
 
 
 @router.patch("/{user_id}")
-def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, db: DbSession, user: UsersManager):
+def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, db: DbSession, user: CurrentUser):
     target = db.get(User, user_id)
     if not target or target.deleted_at:
         raise HTTPException(404, "المستخدم غير موجود")
@@ -103,7 +102,7 @@ def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, db: DbSe
 
 
 @router.get("/roles")
-def list_roles(db: DbSession, user: UsersManager):
+def list_roles(db: DbSession, user: CurrentUser):
     roles = db.scalars(select(Role).order_by(Role.name_ar)).all()
     result = []
     for r in roles:
@@ -130,7 +129,7 @@ def update_role_permissions(
     data: RolePermissionsUpdate,
     request: Request,
     db: DbSession,
-    user: UsersManager,
+    user: CurrentUser,
 ):
     role = db.get(Role, role_id)
     if not role:
@@ -173,7 +172,7 @@ def update_role_permissions(
 
 
 @router.get("/permissions")
-def list_permissions(db: DbSession, user: UsersManager):
+def list_permissions(db: DbSession, user: CurrentUser):
     perms = db.scalars(select(Permission).order_by(Permission.module, Permission.code)).all()
     return {
         "items": [

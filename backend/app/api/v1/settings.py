@@ -1,3 +1,4 @@
+import base64
 import os
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -89,6 +90,10 @@ async def upload_logo(db: DbSession, user: CurrentUser, file: UploadFile = File(
     if not file.filename:
         raise HTTPException(status_code=400, detail="لم يتم اختيار ملف")
     ext = os.path.splitext(file.filename)[1].lower()
+    if not ext:
+        ext = ".png"
+    if ext == ".jfif":
+        ext = ".jpg"
     if ext not in LOGO_EXTENSIONS:
         raise HTTPException(status_code=400, detail="نوع الصورة غير مدعوم (PNG, JPG, WEBP, GIF)")
 
@@ -116,4 +121,10 @@ async def upload_logo(db: DbSession, user: CurrentUser, file: UploadFile = File(
     else:
         db.add(Setting(key="logo_path", value=path))
     db.commit()
-    return {"message": "تم رفع الشعار", "has_logo": True}
+    media_type = LOGO_MEDIA_TYPES.get(ext, "image/png")
+    encoded = base64.b64encode(content).decode("ascii")
+    return {
+        "message": "تم رفع الشعار",
+        "has_logo": True,
+        "logo_data_url": f"data:{media_type};base64,{encoded}",
+    }

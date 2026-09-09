@@ -2,17 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
-import LogoImage from '@/components/LogoImage';
 import { api, apiUpload } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 export default function SettingsPage() {
   const { loading: authLoading } = useAuth();
-  const [logoKey, setLogoKey] = useState(0);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoError, setLogoError] = useState('');
   const [logoSuccess, setLogoSuccess] = useState('');
-  const [hasLogo, setHasLogo] = useState(false);
   const [form, setForm] = useState({
     business_name: '',
     phone: '',
@@ -29,7 +27,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (authLoading) return;
     api<Record<string, string>>('/settings').then((d) => {
-      setHasLogo(d.has_logo === 'true');
+      if (d.has_logo === 'true') {
+        setLogoPreview(`/api/v1/settings/public/logo?v=${Date.now()}`);
+      }
       setForm({
         business_name: d.business_name || '',
         phone: d.phone || '',
@@ -63,9 +63,10 @@ export default function SettingsPage() {
       <div className="card max-w-3xl mb-6">
         <h2 className="font-semibold mb-3">شعار المكتب</h2>
         <div className="mb-4 flex items-center gap-4">
-          {hasLogo ? (
-            <LogoImage
-              refreshKey={logoKey}
+          {logoPreview ? (
+            <img
+              src={logoPreview}
+              alt="شعار المكتب"
               className="h-16 w-auto max-w-[200px] object-contain rounded border border-slate-200 bg-white p-2"
             />
           ) : (
@@ -85,17 +86,23 @@ export default function SettingsPage() {
               setLogoError('اختر صورة أولاً');
               return;
             }
+            const localPreview = URL.createObjectURL(file);
+            setLogoPreview(localPreview);
             setLogoUploading(true);
             try {
               const fd = new FormData();
               fd.append('file', file);
-              await apiUpload('/settings/logo', fd);
-              setHasLogo(true);
-              setLogoKey((k) => k + 1);
-              setLogoSuccess('تم رفع الشعار بنجاح');
+              const res = await apiUpload<{ logo_data_url?: string; message?: string }>('/settings/logo', fd);
+              if (res.logo_data_url) {
+                setLogoPreview(res.logo_data_url);
+              } else {
+                setLogoPreview(`/api/v1/settings/public/logo?v=${Date.now()}`);
+              }
+              setLogoSuccess(res.message || 'تم رفع الشعار بنجاح');
               window.dispatchEvent(new Event('logo-updated'));
               input.value = '';
             } catch (err) {
+              setLogoPreview(null);
               setLogoError(err instanceof Error ? err.message : 'فشل رفع الشعار');
             } finally {
               setLogoUploading(false);
@@ -103,7 +110,15 @@ export default function SettingsPage() {
           }}
           className="flex flex-wrap gap-3 items-center"
         >
-          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="input max-w-md" />
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+            className="input max-w-md"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) setLogoPreview(URL.createObjectURL(file));
+            }}
+          />
           <button type="submit" disabled={logoUploading} className="btn-primary">
             {logoUploading ? 'جاري الرفع...' : 'رفع الشعار'}
           </button>
