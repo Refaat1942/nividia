@@ -56,7 +56,7 @@ sudo certbot --nginx -d office.fratelanza.com
 
 | Type | Name | Content |
 |------|------|---------|
-| A | office | 187.124.15.14 |
+| A | nividia | 187.124.15.14 |
 
 ## المنافذ
 
@@ -68,7 +68,7 @@ sudo certbot --nginx -d office.fratelanza.com
 
 ## تسجيل الدخول
 
-- URL: `https://office.fratelanza.com/login` (أو `http://127.0.0.1:16360/login`)
+- URL: `https://nividia.fratelanza.com/login` (أو `http://127.0.0.1:16360/login`)
 - Email: من `ADMIN_EMAIL` في `.env`
 - Password: من `ADMIN_PASSWORD` في `.env`
 

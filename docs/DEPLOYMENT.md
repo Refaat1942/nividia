@@ -36,15 +36,15 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### Step 4: DNS
 
-Cloudflare A record: `office` → `187.124.15.14` (DNS only initially)
+Cloudflare A record: `nividia` → `187.124.15.14` (DNS only initially)
 
 ### Step 5: SSL
 
 ```bash
-sudo certbot --nginx -d office.fratelanza.com
+sudo certbot --nginx -d nividia.fratelanza.com
 ```
 
-Update `.env` CORS_ORIGINS to include `https://office.fratelanza.com`
+Update `.env` CORS_ORIGINS to include `https://nividia.fratelanza.com`
 
 ### Verify
 
