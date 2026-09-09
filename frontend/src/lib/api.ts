@@ -55,6 +55,15 @@ export function logout() {
   window.location.href = '/login';
 }
 
+export async function fetchAuthenticatedBlob(path: string): Promise<Blob | null> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return null;
+  return res.blob();
+}
+
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {};

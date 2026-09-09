@@ -58,6 +58,9 @@ docker compose -f docker-compose.yml up -d
 echo "Seeding Nividia packages and settings..."
 docker compose -f docker-compose.yml exec -T backend python -c "from app.scripts.seed import run_seed; run_seed()" || true
 
+echo "Ensuring admin superuser access..."
+bash hostinger/fix-admin.sh || true
+
 echo "Waiting for backend..."
 for i in $(seq 1 40); do
   if curl -sf http://127.0.0.1:16361/health >/dev/null 2>&1; then

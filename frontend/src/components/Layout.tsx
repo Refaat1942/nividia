@@ -14,7 +14,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const navItem = NAV_ITEMS.find(
     (item) => item.href !== '/dashboard' && pathname.startsWith(item.href),
   );
-  const denied = !loading && navItem?.permission && !hasPermission(navItem.permission);
+  const denied = !loading && !!user && navItem?.permission && !hasPermission(navItem.permission);
 
   return (
     <div className="min-h-screen" dir="rtl">

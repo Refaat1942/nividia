@@ -20,7 +20,7 @@ const emptyUserForm: UserForm = {
 };
 
 export default function UsersPage() {
-  const { hasPermission, user } = useAuth();
+  const { loading } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [permissions, setPermissions] = useState<any[]>([]);
@@ -40,13 +40,10 @@ export default function UsersPage() {
 
   useEffect(() => { load(); }, []);
 
-  if (!hasPermission('users.manage')) {
+  if (loading) {
     return (
       <Layout>
-        <div className="card text-center py-12">
-          <p className="text-lg font-semibold text-red-600">ليس لديك صلاحية إدارة المستخدمين</p>
-          <p className="text-slate-500 mt-2">تواصل مع مدير النظام لتفعيل صلاحية users.manage</p>
-        </div>
+        <div className="card text-center py-12 text-slate-500">جاري التحميل...</div>
       </Layout>
     );
   }

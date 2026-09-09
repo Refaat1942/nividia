@@ -13,6 +13,7 @@ from app.core.security import (
 )
 from app.models.entities import Role, User, UserRole
 from app.schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, TokenResponse, UserResponse
+from app.services.admin_access import ensure_super_admin
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/auth", tags=["المصادقة"])
@@ -30,6 +31,7 @@ def login(data: LoginRequest, request: Request, db: DbSession):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="بيانات الدخول غير صحيحة")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="الحساب معطل")
+    ensure_super_admin(db, user)
     log_audit(db, user_id=user.id, action="login", module="auth", ip_address=get_client_ip(request))
     db.commit()
     return TokenResponse(
@@ -54,6 +56,7 @@ def refresh(data: RefreshRequest, db: DbSession):
 
 @router.get("/me", response_model=UserResponse)
 def me(db: DbSession, user: CurrentUser):
+    ensure_super_admin(db, user)
     perms = list(get_user_permissions(db, user))
     roles = db.scalars(
         select(Role.name).join(UserRole).where(UserRole.user_id == user.id)

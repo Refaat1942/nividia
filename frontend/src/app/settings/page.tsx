@@ -2,9 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
+import LogoImage from '@/components/LogoImage';
 import { api, apiUpload } from '@/lib/api';
 
 export default function SettingsPage() {
+  const [logoKey, setLogoKey] = useState(0);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState('');
+  const [logoSuccess, setLogoSuccess] = useState('');
+  const [hasLogo, setHasLogo] = useState(false);
   const [form, setForm] = useState({
     business_name: '',
     phone: '',
@@ -20,6 +26,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     api<Record<string, string>>('/settings').then((d) => {
+      setHasLogo(d.has_logo === 'true');
       setForm({
         business_name: d.business_name || '',
         phone: d.phone || '',
@@ -52,19 +59,54 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold mb-6">إعدادات الشركة</h1>
       <div className="card max-w-3xl mb-6">
         <h2 className="font-semibold mb-3">شعار المكتب</h2>
-        <form onSubmit={async (e) => {
-          e.preventDefault();
-          const input = (e.target as HTMLFormElement).querySelector('input[type=file]') as HTMLInputElement;
-          const file = input.files?.[0];
-          if (!file) return alert('اختر صورة');
-          const fd = new FormData();
-          fd.append('file', file);
-          await apiUpload('/settings/logo', fd);
-          alert('تم رفع الشعار');
-        }} className="flex flex-wrap gap-3 items-center">
-          <input type="file" accept="image/*" className="input max-w-md" />
-          <button type="submit" className="btn-primary">رفع الشعار</button>
+        <div className="mb-4 flex items-center gap-4">
+          {hasLogo ? (
+            <LogoImage
+              refreshKey={logoKey}
+              className="h-16 w-auto max-w-[200px] object-contain rounded border border-slate-200 bg-white p-2"
+            />
+          ) : (
+            <div className="h-16 w-32 rounded border border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400">
+              لا يوجد شعار
+            </div>
+          )}
+        </div>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setLogoError('');
+            setLogoSuccess('');
+            const input = (e.target as HTMLFormElement).querySelector('input[type=file]') as HTMLInputElement;
+            const file = input.files?.[0];
+            if (!file) {
+              setLogoError('اختر صورة أولاً');
+              return;
+            }
+            setLogoUploading(true);
+            try {
+              const fd = new FormData();
+              fd.append('file', file);
+              await apiUpload('/settings/logo', fd);
+              setHasLogo(true);
+              setLogoKey((k) => k + 1);
+              setLogoSuccess('تم رفع الشعار بنجاح');
+              window.dispatchEvent(new Event('logo-updated'));
+              input.value = '';
+            } catch (err) {
+              setLogoError(err instanceof Error ? err.message : 'فشل رفع الشعار');
+            } finally {
+              setLogoUploading(false);
+            }
+          }}
+          className="flex flex-wrap gap-3 items-center"
+        >
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="input max-w-md" />
+          <button type="submit" disabled={logoUploading} className="btn-primary">
+            {logoUploading ? 'جاري الرفع...' : 'رفع الشعار'}
+          </button>
         </form>
+        {logoSuccess && <p className="text-green-600 text-sm mt-2">{logoSuccess}</p>}
+        {logoError && <p className="text-red-600 text-sm mt-2">{logoError}</p>}
       </div>
       <div className="card max-w-3xl">
         <form onSubmit={handleSave} className="space-y-4">

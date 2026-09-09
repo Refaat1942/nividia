@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.entities import Permission, Role, RolePermission, User, UserRole
+from app.services.admin_access import ensure_super_admin
 
 security = HTTPBearer(auto_error=False)
 DbSession = Annotated[Session, Depends(get_db)]
@@ -51,6 +52,7 @@ def get_user_permissions(db: Session, user: User) -> set[str]:
 
 def require_permission(permission_code: str):
     def checker(db: DbSession, user: CurrentUser) -> User:
+        ensure_super_admin(db, user)
         if user.is_superuser:
             return user
         perms = get_user_permissions(db, user)
