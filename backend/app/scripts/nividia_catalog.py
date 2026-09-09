@@ -67,25 +67,7 @@ def seed_nividia_catalog(db) -> None:
     active_skus = set()
     for sku, name, annual_price, hours, order in NIVIDIA_ANNUAL_PACKAGES:
         active_skus.add(sku)
-        pkg = db.scalar(select(Package).where(Package.name_en == sku, Package.deleted_at.is_(None)))
-        if not pkg:
-            pkg = Package(name=name, name_en=sku)
-            db.add(pkg)
-            db.flush()
-        else:
-            pkg.name = name
-        pkg.package_type = "annual"
-        pkg.annual_price = annual_price
-        pkg.monthly_price = None
-        pkg.hourly_price = None
-        pkg.included_hours = hours
-        pkg.bonus_hours = Decimal("0")
-        pkg.validity_days = 365
-        pkg.display_order = order
-        pkg.is_active = True
-        pkg.description = NIVIDIA_SERVICES
-        pkg.terms = "دفعة سنوية واحدة. خصم 10% لكل سنة إضافية عند التعاقد لسنتين أو أكثر."
-        pkg.allowed_services = {
+        allowed_services = {
             "secretariat": True,
             "buffet": True,
             "logo_display": True,
@@ -98,6 +80,39 @@ def seed_nividia_catalog(db) -> None:
             "utilities_receipt": True,
             "legal_papers": True,
         }
+        pkg = db.scalar(select(Package).where(Package.name_en == sku, Package.deleted_at.is_(None)))
+        if not pkg:
+            pkg = Package(
+                name=name,
+                name_en=sku,
+                package_type="annual",
+                annual_price=annual_price,
+                monthly_price=None,
+                hourly_price=None,
+                included_hours=hours,
+                bonus_hours=Decimal("0"),
+                validity_days=365,
+                display_order=order,
+                is_active=True,
+                description=NIVIDIA_SERVICES,
+                terms="دفعة سنوية واحدة. خصم 10% لكل سنة إضافية عند التعاقد لسنتين أو أكثر.",
+                allowed_services=allowed_services,
+            )
+            db.add(pkg)
+        else:
+            pkg.name = name
+            pkg.package_type = "annual"
+            pkg.annual_price = annual_price
+            pkg.monthly_price = None
+            pkg.hourly_price = None
+            pkg.included_hours = hours
+            pkg.bonus_hours = Decimal("0")
+            pkg.validity_days = 365
+            pkg.display_order = order
+            pkg.is_active = True
+            pkg.description = NIVIDIA_SERVICES
+            pkg.terms = "دفعة سنوية واحدة. خصم 10% لكل سنة إضافية عند التعاقد لسنتين أو أكثر."
+            pkg.allowed_services = allowed_services
 
     old_nividia = db.scalars(
         select(Package).where(
