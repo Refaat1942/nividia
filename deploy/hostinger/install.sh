@@ -55,6 +55,11 @@ for i in $(seq 1 90); do
   fi
   sleep 2
 done
+if ! curl -sf http://127.0.0.1:16361/health >/dev/null 2>&1; then
+  echo "ERROR: Backend not healthy. Logs:"
+  docker compose -f docker-compose.yml logs --tail=80 backend
+  exit 1
+fi
 
 cat > /etc/nginx/sites-available/nividia.fratelanza.com << 'NGINXEOF'
 upstream nividia_frontend { server 127.0.0.1:16360; }

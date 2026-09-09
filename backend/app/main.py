@@ -1,7 +1,9 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -14,6 +16,7 @@ from app.scripts.seed import run_seed
 
 settings = get_settings()
 limiter = Limiter(key_func=get_remote_address)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -21,7 +24,10 @@ async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     os.makedirs(settings.BACKUP_DIR, exist_ok=True)
     Base.metadata.create_all(bind=engine)
-    run_seed()
+    try:
+        run_seed()
+    except Exception as exc:
+        logger.exception("Seed failed (app will still start): %s", exc)
     yield
 
 
@@ -40,6 +46,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(api_router, prefix=settings.API_PREFIX)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s: %s", request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "خطأ في الخادم"})
 
 
 @app.get("/health")

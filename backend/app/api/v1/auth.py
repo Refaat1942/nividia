@@ -24,7 +24,9 @@ def login(data: LoginRequest, request: Request, db: DbSession):
     user = db.scalar(
         select(User).where(func.lower(User.username) == username, User.deleted_at.is_(None))
     )
-    if not user or not verify_password(data.password, user.hashed_password):
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="بيانات الدخول غير صحيحة")
+    if not verify_password(data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="بيانات الدخول غير صحيحة")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="الحساب معطل")

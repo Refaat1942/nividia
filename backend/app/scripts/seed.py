@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import func, select, text
 
 from app.core.config import get_settings
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, engine
 from app.core.security import hash_password
 from app.models.entities import (
     ContractTemplateVariable,
@@ -99,25 +99,24 @@ DEFAULT_SETTINGS = {
 }
 
 
-def _ensure_user_schema(db) -> None:
-    db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(50)"))
-    db.execute(text(
-        "UPDATE users SET username = LOWER(SPLIT_PART(email, '@', 1)) "
-        "WHERE username IS NULL AND email IS NOT NULL"
-    ))
-    db.execute(text("UPDATE users SET username = 'admin' WHERE username IS NULL"))
+def _ensure_user_schema() -> None:
     try:
-        db.execute(text("ALTER TABLE users ALTER COLUMN email DROP NOT NULL"))
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(50)"))
+            conn.execute(text(
+                "UPDATE users SET username = LOWER(SPLIT_PART(email, '@', 1)) "
+                "WHERE (username IS NULL OR username = '') AND email IS NOT NULL AND email <> ''"
+            ))
+            conn.execute(text("UPDATE users SET username = 'admin' WHERE username IS NULL OR username = ''"))
+            conn.execute(text("ALTER TABLE users ALTER COLUMN email DROP NOT NULL"))
     except Exception:
-        db.rollback()
-        db.begin()
-    db.commit()
+        pass
 
 
 def run_seed() -> None:
+    _ensure_user_schema()
     db = SessionLocal()
     try:
-        _ensure_user_schema(db)
         for code, name_ar, module in PERMISSIONS:
             if not db.scalar(select(Permission).where(Permission.code == code)):
                 db.add(Permission(code=code, name_ar=name_ar, module=module))

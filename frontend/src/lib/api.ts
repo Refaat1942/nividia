@@ -21,7 +21,13 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'خطأ في الخادم' }));
-    throw new Error(err.detail || 'خطأ في الخادم');
+    const detail = err.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join(', ')
+        : 'خطأ في الخادم';
+    throw new Error(message || 'خطأ في الخادم');
   }
   if (res.status === 204) return {} as T;
   const ct = res.headers.get('content-type');
