@@ -1,8 +1,11 @@
+import io
 import math
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, or_, select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip
@@ -70,6 +73,62 @@ def list_customers(
         "page_size": page_size,
         "pages": math.ceil(total / page_size) if total else 0,
     }
+
+
+@router.get("/import-template")
+def download_import_template(user: CurrentUser):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "customers"
+    ws.append(["full_name", "national_id", "phone", "email", "company_name", "address"])
+    ws.append(["أحمد محمد", "29001011234567", "01012345678", "email@example.com", "شركة مثال", "6 أكتوبر"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=customers_import_template.xlsx"},
+    )
+
+
+@router.post("/import")
+async def import_customers(request: Request, db: DbSession, user: CurrentUser, file: UploadFile = File(...)):
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(400, "يجب رفع ملف Excel (.xlsx)")
+    content = await file.read()
+    wb = load_workbook(io.BytesIO(content), read_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    created = 0
+    errors: list[str] = []
+    for idx, row in enumerate(rows, start=2):
+        if not row or not row[0]:
+            continue
+        try:
+            data = CustomerCreate(
+                full_name=str(row[0]).strip(),
+                national_id=str(row[1]).strip(),
+                phone=str(row[2]).strip(),
+                email=str(row[3]).strip() if row[3] else None,
+                company_name=str(row[4]).strip() if row[4] else None,
+                address=str(row[5]).strip() if row[5] else None,
+            )
+            if db.scalar(select(Customer).where(Customer.national_id == data.national_id, Customer.deleted_at.is_(None))):
+                errors.append(f"سطر {idx}: الرقم القومي مسجل")
+                continue
+            if db.scalar(select(Customer).where(Customer.phone == data.phone, Customer.deleted_at.is_(None))):
+                errors.append(f"سطر {idx}: الهاتف مسجل")
+                continue
+            customer = Customer(customer_code=_next_customer_code(db), **data.model_dump())
+            db.add(customer)
+            created += 1
+        except Exception as exc:
+            errors.append(f"سطر {idx}: {exc}")
+    log_audit(db, user_id=user.id, action="import", module="customers",
+              new_value={"created": created, "errors": len(errors)}, ip_address=get_client_ip(request))
+    db.commit()
+    return {"created": created, "errors": errors}
 
 
 @router.post("", response_model=CustomerResponse, status_code=201)

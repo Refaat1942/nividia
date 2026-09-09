@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
-import { api } from '@/lib/api';
+import { api, apiUpload, downloadFile } from '@/lib/api';
+import { formatRemainingFromHours } from '@/lib/time';
 
 export default function CustomerProfilePage() {
   const { id } = useParams();
@@ -14,6 +15,11 @@ export default function CustomerProfilePage() {
   const [bonusReason, setBonusReason] = useState('');
   const [sessions, setSessions] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docName, setDocName] = useState('');
+  const [payForm, setPayForm] = useState({ amount: '', payment_date: '', payment_method: 'cash', notes: '' });
   const [showEdit, setShowEdit] = useState(false);
   const [showPackage, setShowPackage] = useState(false);
   const [packages, setPackages] = useState<any[]>([]);
@@ -25,6 +31,8 @@ export default function CustomerProfilePage() {
     api<any>(`/customers/${id}`).then(setCustomer).catch(console.error);
     api<any>(`/sessions?customer_id=${id}`).then((d) => setSessions(d.items)).catch(console.error);
     api<any>(`/contracts?customer_id=${id}`).then((d) => setContracts(d.items)).catch(console.error);
+    api<any>(`/documents?customer_id=${id}`).then((d) => setDocuments(d.items || [])).catch(console.error);
+    api<any>(`/payments?customer_id=${id}`).then((d) => setPayments(d.items || [])).catch(console.error);
   }, [id]);
 
   async function saveEdit(e: React.FormEvent) {
@@ -95,10 +103,44 @@ export default function CustomerProfilePage() {
   if (!customer) return <Layout><p>جاري التحميل...</p></Layout>;
 
   const hours = customer.hours_summary || {};
+  async function uploadDocument(e: React.FormEvent) {
+    e.preventDefault();
+    if (!docFile || !docName) return;
+    const fd = new FormData();
+    fd.append('customer_id', String(id));
+    fd.append('name', docName);
+    fd.append('document_type', 'general');
+    fd.append('file', docFile);
+    await apiUpload('/documents', fd);
+    setDocFile(null);
+    setDocName('');
+    api<any>(`/documents?customer_id=${id}`).then((d) => setDocuments(d.items || []));
+  }
+
+  async function addPayment(e: React.FormEvent) {
+    e.preventDefault();
+    await api('/payments', {
+      method: 'POST',
+      body: JSON.stringify({
+        customer_id: id,
+        amount: parseFloat(payForm.amount),
+        payment_date: payForm.payment_date,
+        payment_method: payForm.payment_method,
+        notes: payForm.notes || null,
+        status: 'paid',
+      }),
+    });
+    setPayForm({ amount: '', payment_date: '', payment_method: 'cash', notes: '' });
+    api<any>(`/payments?customer_id=${id}`).then((d) => setPayments(d.items || []));
+  }
+
+  const paidTotal = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + Number(p.amount), 0);
   const tabs = [
     { key: 'info', label: 'بيانات العميل' },
     { key: 'package', label: 'الباقة' },
     { key: 'hours', label: 'الساعات' },
+    { key: 'payments', label: 'المدفوعات' },
+    { key: 'documents', label: 'المستندات' },
     { key: 'contract', label: 'العقد' },
     { key: 'sessions', label: 'الجلسات' },
   ];
@@ -118,6 +160,9 @@ export default function CustomerProfilePage() {
                 </span>
               )}
             </div>
+            <p className="text-sm text-green-700 mt-2 font-medium">
+              الوقت المتبقي: {hours.remaining_time?.display_short || formatRemainingFromHours(hours.remaining_hours || 0)}
+            </p>
           </div>
           <div className="flex gap-2">
             <button onClick={openPackageModal} className="btn-primary text-sm">+ إضافة باقة</button>
@@ -174,7 +219,10 @@ export default function CustomerProfilePage() {
         <div className="card text-center"><p className="text-xs text-slate-500">إجمالي الساعات</p><p className="text-2xl font-bold text-blue-700">{hours.total_available || 0}</p></div>
         <div className="card text-center"><p className="text-xs text-slate-500">ساعات البونص</p><p className="text-2xl font-bold text-purple-700">{hours.bonus_hours || 0}</p></div>
         <div className="card text-center"><p className="text-xs text-slate-500">المستخدمة</p><p className="text-2xl font-bold text-orange-700">{hours.used_hours || 0}</p></div>
-        <div className="card text-center"><p className="text-xs text-slate-500">المتبقية</p><p className="text-2xl font-bold text-green-700">{hours.remaining_hours || 0}</p></div>
+        <div className="card text-center">
+          <p className="text-xs text-slate-500">المتبقية</p>
+          <p className="text-xl font-bold text-green-700">{hours.remaining_time?.display_short || formatRemainingFromHours(hours.remaining_hours || 0)}</p>
+        </div>
       </div>
       <div className="flex gap-2 mb-4 border-b">
         {tabs.map((t) => (
@@ -221,6 +269,65 @@ export default function CustomerProfilePage() {
             <input className="input" placeholder="السبب" value={bonusReason} onChange={(e) => setBonusReason(e.target.value)} />
             <button onClick={addBonus} className="btn-primary whitespace-nowrap">إضافة</button>
           </div>
+        </div>
+      )}
+      {tab === 'payments' && (
+        <div className="card space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="font-semibold">مدفوعات العميل</h3>
+            <p className="text-sm text-slate-600">إجمالي المدفوع: <strong>{paidTotal.toLocaleString('ar-EG')} ج.م</strong></p>
+          </div>
+          <form onSubmit={addPayment} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input className="input" placeholder="المبلغ" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} required />
+            <input type="date" className="input" value={payForm.payment_date} onChange={(e) => setPayForm({ ...payForm, payment_date: e.target.value })} required />
+            <select className="input-select" value={payForm.payment_method} onChange={(e) => setPayForm({ ...payForm, payment_method: e.target.value })}>
+              <option value="cash">نقدي</option>
+              <option value="transfer">تحويل</option>
+              <option value="card">بطاقة</option>
+            </select>
+            <button type="submit" className="btn-primary">تسجيل دفعة</button>
+          </form>
+          <table className="w-full text-sm">
+            <thead><tr className="table-head">
+              <th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">المبلغ</th><th className="p-2 text-right">الطريقة</th><th className="p-2 text-right">الحالة</th>
+            </tr></thead>
+            <tbody>
+              {payments.map((p) => (
+                <tr key={p.id} className="border-t">
+                  <td className="p-2">{p.payment_date}</td>
+                  <td className="p-2">{Number(p.amount).toLocaleString('ar-EG')} ج.م</td>
+                  <td className="p-2">{p.payment_method}</td>
+                  <td className="p-2">{p.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {tab === 'documents' && (
+        <div className="card space-y-4">
+          <h3 className="font-semibold">مستندات العميل</h3>
+          <form onSubmit={uploadDocument} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input className="input" placeholder="اسم المستند" value={docName} onChange={(e) => setDocName(e.target.value)} required />
+            <input type="file" className="input" onChange={(e) => setDocFile(e.target.files?.[0] || null)} required />
+            <button type="submit" className="btn-primary">رفع مستند</button>
+          </form>
+          <table className="w-full text-sm">
+            <thead><tr className="table-head">
+              <th className="p-2 text-right">الاسم</th><th className="p-2 text-right">النوع</th><th className="p-2 text-right">إجراء</th>
+            </tr></thead>
+            <tbody>
+              {documents.map((d) => (
+                <tr key={d.id} className="border-t">
+                  <td className="p-2">{d.name}</td>
+                  <td className="p-2">{d.document_type}</td>
+                  <td className="p-2">
+                    <button onClick={() => downloadFile(`/documents/${d.id}/download`, d.name)} className="text-primary hover:underline">تحميل</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {tab === 'contract' && (

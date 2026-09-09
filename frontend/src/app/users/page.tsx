@@ -20,7 +20,7 @@ const emptyUserForm: UserForm = {
 };
 
 export default function UsersPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [permissions, setPermissions] = useState<any[]>([]);
@@ -40,7 +40,7 @@ export default function UsersPage() {
 
   useEffect(() => { load(); }, []);
 
-  if (!hasPermission('users.manage')) {
+  if (!user?.is_superuser && !hasPermission('users.manage')) {
     return (
       <Layout>
         <div className="card text-center py-12">

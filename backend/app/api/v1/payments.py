@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip
-from app.models.entities import Payment, PaymentStatus
+from app.models.entities import Customer, Payment, PaymentStatus
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/payments", tags=["المدفوعات"])
@@ -33,15 +33,31 @@ class PaymentUpdate(BaseModel):
     notes: str | None = None
 
 
+def _payment_dict(p: Payment, customer: Customer | None = None) -> dict:
+    return {
+        "id": str(p.id),
+        "customer_id": str(p.customer_id),
+        "customer_name": customer.full_name if customer else None,
+        "contract_id": str(p.contract_id) if p.contract_id else None,
+        "amount": float(p.amount),
+        "payment_date": str(p.payment_date),
+        "payment_method": p.payment_method,
+        "reference": p.reference,
+        "status": p.status,
+        "notes": p.notes,
+    }
+
+
 @router.get("")
 def list_payments(db: DbSession, user: CurrentUser, customer_id: uuid.UUID | None = None, status: str | None = None):
-    q = select(Payment)
+    q = select(Payment, Customer).join(Customer, Payment.customer_id == Customer.id)
     if customer_id:
         q = q.where(Payment.customer_id == customer_id)
     if status:
         q = q.where(Payment.status == status)
-    items = db.scalars(q.order_by(Payment.payment_date.desc())).all()
-    total = sum(float(p.amount) for p in items if p.status == PaymentStatus.PAID.value)
+    rows = db.execute(q.order_by(Payment.payment_date.desc())).all()
+    items = [_payment_dict(p, c) for p, c in rows]
+    total = sum(i["amount"] for i in items if i["status"] == PaymentStatus.PAID.value)
     return {"items": items, "total_amount": total}
 
 

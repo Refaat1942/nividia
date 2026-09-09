@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.entities import HoursTransaction, HoursTransactionType
+from app.utils.time_format import breakdown_hours
 
 settings = get_settings()
 
@@ -45,13 +46,17 @@ def get_hours_summary(db: Session, customer_id: uuid.UUID) -> dict:
     total_available = package_hours + bonus_hours + adjustments
     remaining = get_customer_balance(db, customer_id)
 
+    remaining_f = float(remaining)
+    used_f = float(used_hours)
     return {
         "package_hours": float(package_hours),
         "bonus_hours": float(bonus_hours),
         "adjustments": float(adjustments),
-        "used_hours": float(used_hours),
+        "used_hours": used_f,
         "total_available": float(total_available),
-        "remaining_hours": float(remaining),
+        "remaining_hours": remaining_f,
+        "remaining_time": breakdown_hours(remaining_f),
+        "used_time": breakdown_hours(used_f),
     }
 
 

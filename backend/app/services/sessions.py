@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import Customer, CustomerSession, CustomerStatus, HoursTransactionType, SessionStatus
 from app.services.hours import add_hours_transaction, get_customer_balance, get_hours_summary
+from app.utils.time_format import breakdown_minutes
 
 
 def calculate_billable_hours(duration_minutes: int) -> Decimal:
@@ -130,8 +131,11 @@ def session_to_dict(session: CustomerSession, customer: Customer | None = None, 
         check_in = session.check_in_at
         if check_in.tzinfo is None:
             check_in = check_in.replace(tzinfo=timezone.utc)
-        elapsed = max(0, int((datetime.now(timezone.utc) - check_in).total_seconds() // 60))
+        elapsed_seconds = max(0, int((datetime.now(timezone.utc) - check_in).total_seconds()))
+        elapsed = elapsed_seconds // 60
+        data["elapsed_seconds"] = elapsed_seconds
         data["elapsed_minutes"] = elapsed
+        data["elapsed_time"] = breakdown_minutes(elapsed)
         data["estimated_hours"] = float(calculate_billable_hours(elapsed))
     return data
 

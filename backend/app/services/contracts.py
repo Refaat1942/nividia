@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Contract, ContractTemplate, Customer, Office, Package, Room, Setting
+from app.services.docx_arabic_fill import fill_arabic_blanks
 from app.services.docx_fields import FIELD_LABELS_AR, analyze_template_fields, canonicalize_field
 from app.services.hours import get_hours_summary
 
@@ -81,10 +82,18 @@ def generate_contract_docx(
     output_path: str,
     context: dict,
 ) -> str:
-    doc = DocxTemplate(template_path)
-    doc.render(context)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    doc.save(output_path)
+    tmp_path = output_path + ".tmp.docx"
+    try:
+        doc = DocxTemplate(template_path)
+        doc.render(context)
+        doc.save(tmp_path)
+    except Exception:
+        import shutil
+        shutil.copy2(template_path, tmp_path)
+    fill_arabic_blanks(tmp_path, output_path, context)
+    if os.path.exists(tmp_path) and tmp_path != output_path:
+        os.remove(tmp_path)
     return output_path
 
 

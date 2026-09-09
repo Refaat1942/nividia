@@ -159,6 +159,9 @@ def run_seed() -> None:
 
         admin_username = settings.ADMIN_USERNAME.strip().lower()
         admin = db.scalar(select(User).where(func.lower(User.username) == admin_username))
+        if admin:
+            admin.is_superuser = True
+            admin.is_active = True
         if not admin:
             password = settings.ADMIN_PASSWORD or "ChangeMeNow123!"
             admin = User(

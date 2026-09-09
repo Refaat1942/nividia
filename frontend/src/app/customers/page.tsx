@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
-import { api } from '@/lib/api';
+import { api, apiUpload, downloadFile } from '@/lib/api';
 import { phoneRegex, nationalIdRegex } from '@/lib/utils';
 
 const emptyForm = { full_name: '', national_id: '', phone: '', email: '', company_name: '', address: '', status: 'active' };
@@ -63,7 +63,22 @@ export default function CustomersPage() {
     <Layout>
       <div className="flex items-center justify-between mb-6">
         <div><h1 className="text-2xl font-bold">العملاء</h1><p className="text-slate-500 text-sm">إدارة بيانات العملاء</p></div>
-        <button onClick={() => { setShowForm(true); setForm(emptyForm); }} className="btn-primary">+ عميل جديد</button>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => downloadFile('/customers/import-template', 'customers_template.xlsx')} className="btn-secondary">تحميل نموذج Excel</button>
+          <label className="btn-secondary cursor-pointer">
+            رفع عملاء
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const fd = new FormData();
+              fd.append('file', f);
+              const r = await apiUpload<any>('/customers/import', fd);
+              alert(`تم إضافة ${r.created} عميل${r.errors?.length ? `\nأخطاء: ${r.errors.length}` : ''}`);
+              load();
+            }} />
+          </label>
+          <button onClick={() => { setShowForm(true); setForm(emptyForm); }} className="btn-primary">+ عميل جديد</button>
+        </div>
       </div>
       <div className="card mb-4">
         <input className="input max-w-md" placeholder="بحث..." value={search} onChange={(e) => setSearch(e.target.value)} />

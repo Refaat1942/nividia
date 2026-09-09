@@ -51,6 +51,8 @@ def get_user_permissions(db: Session, user: User) -> set[str]:
 
 def require_permission(permission_code: str):
     def checker(db: DbSession, user: CurrentUser) -> User:
+        if user.is_superuser:
+            return user
         perms = get_user_permissions(db, user)
         if permission_code not in perms:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ليس لديك صلاحية")

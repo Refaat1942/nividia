@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Customer, CustomerSession, SessionStatus
 from app.services.audit import log_audit
-from app.services.hours import get_customer_balance
+from app.services.hours import get_customer_balance, get_hours_summary
 from app.services.notify import notify_admins
 from app.services.sessions import (
     check_in_customer,
@@ -65,9 +65,10 @@ def list_active_sessions(db: DbSession, user: CurrentUser):
     ).all()
     items = []
     for session, customer in rows:
-        balance = get_customer_balance(db, customer.id)
+        hours = get_hours_summary(db, customer.id)
         data = session_to_dict(session, customer, include_live=True)
-        data["remaining_hours"] = float(balance)
+        data["remaining_hours"] = hours["remaining_hours"]
+        data["remaining_time"] = hours["remaining_time"]
         items.append(data)
     return {"items": items, "count": len(items)}
 

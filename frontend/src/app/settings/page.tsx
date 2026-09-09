@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
-import { api } from '@/lib/api';
+import { api, apiUpload } from '@/lib/api';
 
 export default function SettingsPage() {
   const [form, setForm] = useState({
@@ -50,6 +50,22 @@ export default function SettingsPage() {
   return (
     <Layout>
       <h1 className="text-2xl font-bold mb-6">إعدادات الشركة</h1>
+      <div className="card max-w-3xl mb-6">
+        <h2 className="font-semibold mb-3">شعار المكتب</h2>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          const input = (e.target as HTMLFormElement).querySelector('input[type=file]') as HTMLInputElement;
+          const file = input.files?.[0];
+          if (!file) return alert('اختر صورة');
+          const fd = new FormData();
+          fd.append('file', file);
+          await apiUpload('/settings/logo', fd);
+          alert('تم رفع الشعار');
+        }} className="flex flex-wrap gap-3 items-center">
+          <input type="file" accept="image/*" className="input max-w-md" />
+          <button type="submit" className="btn-primary">رفع الشعار</button>
+        </form>
+      </div>
       <div className="card max-w-3xl">
         <form onSubmit={handleSave} className="space-y-4">
           <div>

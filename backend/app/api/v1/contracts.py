@@ -132,6 +132,20 @@ async def upload_template(
     return result
 
 
+@router.delete("/templates/{template_id}")
+def delete_template(template_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    tpl = db.get(ContractTemplate, template_id)
+    if not tpl:
+        raise HTTPException(404, "القالب غير موجود")
+    if tpl.file_path and os.path.exists(tpl.file_path):
+        os.remove(tpl.file_path)
+    tpl.is_active = False
+    log_audit(db, user_id=user.id, action="delete", module="contract_templates", record_id=str(template_id),
+              ip_address=get_client_ip(request))
+    db.commit()
+    return {"message": "تم حذف القالب"}
+
+
 @router.patch("/templates/{template_id}")
 def update_template(template_id: uuid.UUID, data: TemplateUpdate, request: Request, db: DbSession, user: CurrentUser):
     tpl = db.get(ContractTemplate, template_id)
@@ -193,6 +207,11 @@ def preview_context(
                 "value": render.get(raw) or (base.get(canonical or "") if canonical else ""),
                 "auto_mapped": f.get("auto_mapped", False),
             })
+        if not preview:
+            preview = [
+                {"field": k, "label_ar": FIELD_LABELS_AR.get(k, k), "value": v, "auto_mapped": True}
+                for k, v in base.items()
+            ]
         return {"context": base, "render_context": render, "fields": preview}
     base = build_contract_context(db, customer, package, office, room, contract_stub)
     return {

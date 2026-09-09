@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { api } from '@/lib/api';
+import { formatElapsed, formatRemainingFromHours } from '@/lib/time';
 
 function formatDuration(minutes: number) {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h > 0) return `${h} س ${m} د`;
-  return `${m} دقيقة`;
+  return formatElapsed(minutes * 60);
 }
 
 function formatTime(iso: string) {
@@ -34,7 +32,7 @@ export default function SessionsPage() {
   useEffect(() => {
     load();
     api<any>('/customers?status=active').then((d) => setCustomers(d.items)).catch(console.error);
-    const timer = setInterval(() => setNow(Date.now()), 30000);
+    const timer = setInterval(() => setNow(Date.now()), 1000);
     const refresh = setInterval(load, 30000);
     return () => { clearInterval(timer); clearInterval(refresh); };
   }, [load]);
@@ -80,8 +78,8 @@ export default function SessionsPage() {
 
   function liveElapsed(checkInAt: string) {
     const start = new Date(checkInAt).getTime();
-    const mins = Math.max(0, Math.floor((now - start) / 60000));
-    return formatDuration(mins);
+    const secs = Math.max(0, Math.floor((now - start) / 1000));
+    return formatElapsed(secs);
   }
 
   return (
@@ -146,7 +144,9 @@ export default function SessionsPage() {
                       حضور: {formatTime(s.check_in_at)} • المدة: {liveElapsed(s.check_in_at)}
                       {s.estimated_hours ? ` • تقدير الخصم: ${s.estimated_hours} س` : ''}
                     </p>
-                    <p className="text-xs text-green-700 mt-1">المتبقي: {s.remaining_hours ?? '—'} ساعة</p>
+                    <p className="text-xs text-green-700 mt-1">
+                      المتبقي: {s.remaining_time?.display_short || formatRemainingFromHours(s.remaining_hours ?? 0)}
+                    </p>
                   </div>
                   <button
                     onClick={() => handleCheckOut(s.id)}

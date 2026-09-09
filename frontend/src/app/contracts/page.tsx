@@ -24,6 +24,19 @@ export default function ContractsPage() {
   const [uploadForm, setUploadForm] = useState({ name: '', description: '' });
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [lastUpload, setLastUpload] = useState<any>(null);
+  const [error, setError] = useState('');
+
+  function contractPayload() {
+    return {
+      customer_id: form.customer_id,
+      template_id: form.template_id,
+      package_id: form.package_id || null,
+      office_id: form.office_id || null,
+      room_id: form.room_id || null,
+      start_date: form.start_date || null,
+      end_date: form.end_date || null,
+    };
+  }
 
   function load() {
     api<any>('/contracts').then((d) => setContracts(d.items)).catch(console.error);
@@ -60,9 +73,24 @@ export default function ContractsPage() {
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();
-    await api('/contracts/generate', { method: 'POST', body: JSON.stringify(form) });
-    setShowGen(false);
-    setPreview(null);
+    setError('');
+    try {
+      const result = await api<any>('/contracts/generate', { method: 'POST', body: JSON.stringify(contractPayload()) });
+      setShowGen(false);
+      setPreview(null);
+      load();
+      if (result?.id) {
+        openPrintPage(`/contracts/${result.id}/print`);
+        downloadFile(`/contracts/${result.id}/download`, `${result.contract_number || 'contract'}.docx`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'فشل توليد العقد');
+    }
+  }
+
+  async function deleteTemplate(id: string) {
+    if (!confirm('حذف هذا القالب؟')) return;
+    await api(`/contracts/templates/${id}`, { method: 'DELETE' });
     load();
   }
 
@@ -117,10 +145,13 @@ export default function ContractsPage() {
         ))}
       </div>
 
+      {error && <div className="card mb-4 bg-red-50 text-red-700 text-sm">{error}</div>}
+
       {tab === 'templates' && (
         <>
           <div className="card mb-4">
-            <h3 className="font-semibold mb-2">الحقول المتاحة للقوالب (استخدمها في Word كـ {`{{اسم_الحقل}}`})</h3>
+            <h3 className="font-semibold mb-2">الحقول المتاحة للقوالب</h3>
+            <p className="text-sm text-slate-600 mb-2">يدعم {`{{اسم_الحقل}}`} في Word أو الفراغات العربية (نقاط/شرطات) في قالب نفيديا</p>
             <div className="flex flex-wrap gap-2">
               {variables.map((v) => (
                 <code key={v.key} className="px-2 py-1 bg-slate-100 rounded text-xs" title={v.label_ar}>{`{{${v.key}}}`}</code>
@@ -155,11 +186,16 @@ export default function ContractsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {templates.map((t) => (
               <div key={t.id} className="card">
-                <h3 className="font-bold">{t.name}</h3>
-                <p className="text-sm text-slate-500">{t.description || '—'}</p>
-                <p className="text-xs mt-2 text-slate-400">
-                  {t.variables_json?.field_count || 0} حقول • {t.variables_json?.auto_mapped_count || 0} مربوطة تلقائيًا
-                </p>
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <h3 className="font-bold">{t.name}</h3>
+                    <p className="text-sm text-slate-500">{t.description || '—'}</p>
+                    <p className="text-xs mt-2 text-slate-400">
+                      {t.variables_json?.field_count || 0} حقول • {t.variables_json?.auto_mapped_count || 0} مربوطة تلقائيًا
+                    </p>
+                  </div>
+                  <button onClick={() => deleteTemplate(t.id)} className="text-red-600 text-sm hover:underline">حذف</button>
+                </div>
               </div>
             ))}
           </div>
@@ -212,48 +248,50 @@ export default function ContractsPage() {
         </form>
       </Modal>
 
-      <Modal open={showGen} title="إنشاء عقد جديد" onClose={() => { setShowGen(false); setPreview(null); }}>
+      <Modal open={showGen} title="إنشاء عقد جديد" onClose={() => { setShowGen(false); setPreview(null); }} wide>
         <form onSubmit={generate} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <select className="input" value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })} required>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <select className="input-select" value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })} required>
               <option value="">العميل</option>
               {customers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
             </select>
-            <select className="input" value={form.template_id} onChange={(e) => setForm({ ...form, template_id: e.target.value })} required>
+            <select className="input-select" value={form.template_id} onChange={(e) => setForm({ ...form, template_id: e.target.value })} required>
               <option value="">القالب</option>
               {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <select className="input" value={form.package_id} onChange={(e) => setForm({ ...form, package_id: e.target.value })}>
+            <select className="input-select" value={form.package_id} onChange={(e) => setForm({ ...form, package_id: e.target.value })}>
               <option value="">الباقة</option>
               {packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <select className="input" value={form.office_id} onChange={(e) => setForm({ ...form, office_id: e.target.value })}>
+            <select className="input-select" value={form.office_id} onChange={(e) => setForm({ ...form, office_id: e.target.value })}>
               <option value="">المكتب</option>
               {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
-            <select className="input" value={form.room_id} onChange={(e) => setForm({ ...form, room_id: e.target.value })}>
+            <select className="input-select" value={form.room_id} onChange={(e) => setForm({ ...form, room_id: e.target.value })}>
               <option value="">الغرفة</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
             <input type="date" className="input" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
             <input type="date" className="input" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
           </div>
-          {preview?.fields && (
-            <div className="bg-slate-50 rounded-lg p-4 max-h-48 overflow-y-auto">
+          {preview?.fields?.length ? (
+            <div className="bg-slate-50 rounded-lg p-4 max-h-72 overflow-y-auto">
               <h4 className="font-semibold text-sm mb-2">معاينة البيانات التلقائية</h4>
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <tbody>
                   {preview.fields.map((f: any) => (
                     <tr key={f.field} className="border-t">
-                      <td className="py-1 pr-2 text-slate-500">{f.label_ar}</td>
-                      <td className="py-1 font-medium">{f.value || '—'}</td>
+                      <td className="py-2 pr-2 text-slate-500 w-1/3">{f.label_ar}</td>
+                      <td className="py-2 font-medium break-words">{f.value || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
-          <button type="submit" className="btn-primary">توليد وطباعة العقد</button>
+          ) : form.customer_id && form.template_id ? (
+            <p className="text-sm text-slate-500">جاري تحميل المعاينة...</p>
+          ) : null}
+          <button type="submit" className="btn-primary w-full md:w-auto">توليد وطباعة العقد</button>
         </form>
       </Modal>
 
