@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.core.security import hash_password
 from app.models.entities import Permission, Role, RolePermission, User, UserRole
+from app.services.admin_access import ensure_super_admin
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/users", tags=["المستخدمون"])
@@ -25,6 +26,10 @@ class UserUpdate(BaseModel):
     full_name: str | None = None
     is_active: bool | None = None
     role_ids: list[uuid.UUID] | None = None
+
+
+class AdminPasswordReset(BaseModel):
+    new_password: str = Field(min_length=8)
 
 
 class RolePermissionsUpdate(BaseModel):
@@ -99,6 +104,35 @@ def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, db: DbSe
     db.commit()
     roles = db.scalars(select(Role.name).join(UserRole).where(UserRole.user_id == user_id)).all()
     return _user_dict(target, list(roles))
+
+
+@router.post("/{user_id}/reset-password")
+def reset_user_password(
+    user_id: uuid.UUID,
+    data: AdminPasswordReset,
+    request: Request,
+    db: DbSession,
+    user: CurrentUser,
+):
+    ensure_super_admin(db, user)
+    if not user.is_superuser:
+        raise HTTPException(403, "فقط مدير النظام يمكنه إعادة تعيين كلمات المرور")
+    target = db.get(User, user_id)
+    if not target or target.deleted_at:
+        raise HTTPException(404, "المستخدم غير موجود")
+    target.hashed_password = hash_password(data.new_password)
+    target.must_change_password = False
+    log_audit(
+        db,
+        user_id=user.id,
+        action="reset_password",
+        module="users",
+        record_id=str(user_id),
+        new_value={"username": target.username},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+    return {"message": "تم تعيين كلمة المرور الجديدة"}
 
 
 @router.get("/roles")

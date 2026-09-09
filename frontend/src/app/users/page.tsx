@@ -20,7 +20,10 @@ const emptyUserForm: UserForm = {
 };
 
 export default function UsersPage() {
-  const { loading } = useAuth();
+  const { loading, user: authUser } = useAuth();
+  const [resettingUser, setResettingUser] = useState<any>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetError, setResetError] = useState('');
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [permissions, setPermissions] = useState<any[]>([]);
@@ -84,6 +87,26 @@ export default function UsersPage() {
     });
     setEditingUser(null);
     load();
+  }
+
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setResetError('');
+    if (newPassword.length < 8) {
+      setResetError('كلمة المرور يجب أن تكون 8 أحرف على الأقل');
+      return;
+    }
+    try {
+      await api(`/users/${resettingUser.id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      setResettingUser(null);
+      setNewPassword('');
+      alert(`تم تعيين كلمة مرور جديدة للمستخدم ${resettingUser.username}`);
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'فشل إعادة التعيين');
+    }
   }
 
   async function handleSaveRolePerms(e: React.FormEvent) {
@@ -156,7 +179,7 @@ export default function UsersPage() {
                       {u.is_active ? 'نشط' : 'معطل'}
                     </span>
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 space-x-2 space-x-reverse">
                     {!u.is_superuser && (
                       <button
                         onClick={() => {
@@ -173,6 +196,14 @@ export default function UsersPage() {
                         className="text-primary hover:underline"
                       >
                         تعديل
+                      </button>
+                    )}
+                    {authUser?.is_superuser && (
+                      <button
+                        onClick={() => { setResettingUser(u); setNewPassword(''); setResetError(''); }}
+                        className="text-amber-700 hover:underline"
+                      >
+                        إعادة تعيين كلمة المرور
                       </button>
                     )}
                   </td>
@@ -269,6 +300,26 @@ export default function UsersPage() {
             ))}
           </div>
           <button type="submit" className="btn-primary">حفظ</button>
+        </form>
+      </Modal>
+
+      <Modal open={!!resettingUser} title={`إعادة تعيين كلمة المرور: ${resettingUser?.username}`} onClose={() => setResettingUser(null)}>
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <p className="text-sm text-slate-600">
+            للمستخدم <strong>{resettingUser?.full_name}</strong> — أدخل كلمة مرور جديدة وبلّغه بها.
+          </p>
+          <input
+            type="password"
+            className="input"
+            placeholder="كلمة المرور الجديدة (8 أحرف على الأقل)"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
+          {resetError && <p className="text-red-600 text-sm">{resetError}</p>}
+          <button type="submit" className="btn-primary">تعيين كلمة المرور</button>
         </form>
       </Modal>
 

@@ -46,7 +46,14 @@ export async function login(username: string, password: string) {
 }
 
 export async function getMe() {
-  return api<{ username: string; full_name: string; permissions: string[]; roles: string[]; is_superuser: boolean }>('/auth/me');
+  return api<{ username: string; full_name: string; permissions: string[]; roles: string[]; is_superuser: boolean; must_change_password?: boolean }>('/auth/me');
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  return api<{ message: string }>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
 }
 
 export function logout() {

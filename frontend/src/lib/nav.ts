@@ -16,5 +16,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/reports', label: 'التقارير', icon: '📈', permission: 'reports.view' },
   { href: '/users', label: 'المستخدمون والصلاحيات', icon: '🔐', permission: 'users.manage' },
   { href: '/audit', label: 'سجل العمليات', icon: '📋', permission: 'audit.view' },
+  { href: '/account', label: 'حسابي', icon: '👤' },
   { href: '/settings', label: 'الإعدادات', icon: '⚙️', permission: 'settings.manage' },
 ];
