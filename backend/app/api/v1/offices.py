@@ -54,6 +54,20 @@ def create_office(data: OfficeSchema, request: Request, db: DbSession, user: Cur
     return office
 
 
+@router.delete("/{office_id}")
+def delete_office(office_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    from datetime import datetime, timezone
+
+    office = db.get(Office, office_id)
+    if not office or office.deleted_at:
+        raise HTTPException(404, "المكتب غير موجود")
+    office.deleted_at = datetime.now(timezone.utc)
+    log_audit(db, user_id=user.id, action="delete", module="offices", record_id=str(office_id),
+              ip_address=get_client_ip(request))
+    db.commit()
+    return {"message": "تم الحذف"}
+
+
 @router.patch("/{office_id}")
 def update_office(office_id: uuid.UUID, data: OfficeSchema, db: DbSession, user: CurrentUser):
     office = db.get(Office, office_id)

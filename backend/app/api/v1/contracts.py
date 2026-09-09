@@ -335,6 +335,20 @@ def get_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
     return _contract_dict(contract, customer, db)
 
 
+@router.delete("/{contract_id}")
+def delete_contract(contract_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    from datetime import datetime, timezone
+
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    contract.deleted_at = datetime.now(timezone.utc)
+    log_audit(db, user_id=user.id, action="delete", module="contracts", record_id=str(contract_id),
+              ip_address=get_client_ip(request))
+    db.commit()
+    return {"message": "تم حذف العقد"}
+
+
 @router.patch("/{contract_id}")
 def update_contract(contract_id: uuid.UUID, data: ContractUpdate, request: Request, db: DbSession, user: CurrentUser):
     contract = db.get(Contract, contract_id)

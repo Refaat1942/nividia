@@ -89,6 +89,12 @@ export default function ContractsPage() {
     }
   }
 
+  async function deleteContract(id: string, number: string) {
+    if (!confirm(`حذف العقد ${number}؟`)) return;
+    await api(`/contracts/${id}`, { method: 'DELETE' });
+    load();
+  }
+
   async function deleteTemplate(id: string) {
     if (!confirm('حذف هذا القالب؟')) return;
     await api(`/contracts/templates/${id}`, { method: 'DELETE' });
@@ -233,6 +239,7 @@ export default function ContractsPage() {
                     <button onClick={() => downloadFile(`/contracts/${c.id}/download`, `${c.contract_number}.docx`)} className="text-primary hover:underline">تحميل</button>
                     <button onClick={() => openPrintPage(`/contracts/${c.id}/print`)} className="text-primary hover:underline">طباعة</button>
                     <button onClick={() => api(`/contracts/${c.id}/regenerate`, { method: 'POST' }).then(load)} className="text-slate-500 hover:underline">إعادة توليد</button>
+                    <button onClick={() => deleteContract(c.id, c.contract_number)} className="text-red-600 hover:underline">حذف</button>
                   </td>
                 </tr>
               ))}

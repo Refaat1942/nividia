@@ -32,4 +32,15 @@ body {
   .table-head {
     @apply bg-slate-50 text-slate-600 text-sm font-semibold;
   }
+  .sidebar-nav {
+    scrollbar-width: thin;
+    scrollbar-color: #475569 transparent;
+  }
+  .sidebar-nav::-webkit-scrollbar {
+    width: 6px;
+  }
+  .sidebar-nav::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 4px;
+  }
 }

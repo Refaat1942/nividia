@@ -129,6 +129,13 @@ export default function SpacesPage() {
     load();
   }
 
+  async function handleDelete(space: SpaceItem) {
+    if (!confirm(`حذف «${space.name}»؟`)) return;
+    const path = space.kind === 'room' ? `/rooms/${space.id}` : `/offices/${space.id}`;
+    await api(path, { method: 'DELETE' });
+    load();
+  }
+
   function openEdit(space: SpaceItem) {
     setEditing(space);
     setForm({
@@ -231,7 +238,10 @@ export default function SpacesPage() {
                 <h3 className="font-bold">{s.name}</h3>
                 <p className="text-sm text-slate-500">#{s.number}{s.floor ? ` • طابق ${s.floor}` : ''}</p>
               </div>
-              <button onClick={() => openEdit(s)} className="text-xs text-primary hover:underline shrink-0">تعديل</button>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={() => openEdit(s)} className="text-xs text-primary hover:underline">تعديل</button>
+                <button onClick={() => handleDelete(s)} className="text-xs text-red-600 hover:underline">حذف</button>
+              </div>
             </div>
             <span className={`inline-block px-2 py-1 rounded text-xs mt-2 ${statusColors[s.status] || ''}`}>{s.status}</span>
             <div className="mt-3 text-sm space-y-1">

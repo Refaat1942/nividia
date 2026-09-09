@@ -51,6 +51,12 @@ export default function CustomersPage() {
     }
   }
 
+  async function handleDelete(c: any) {
+    if (!confirm(`حذف العميل «${c.full_name}»؟`)) return;
+    await api(`/customers/${c.id}`, { method: 'DELETE' });
+    load();
+  }
+
   function startEdit(c: any) {
     setEditing(c);
     setForm({
@@ -117,6 +123,7 @@ export default function CustomersPage() {
                 <td className="p-3 space-x-3 space-x-reverse">
                   <button onClick={() => startEdit(c)} className="text-primary hover:underline">تعديل</button>
                   <Link href={`/customers/${c.id}`} className="text-slate-500 hover:underline">عرض</Link>
+                  <button onClick={() => handleDelete(c)} className="text-red-600 hover:underline">حذف</button>
                 </td>
               </tr>
             ))}

@@ -63,6 +63,12 @@ export default function PackagesPage() {
     load();
   }
 
+  async function handleDelete(p: any) {
+    if (!confirm(`حذف باقة «${p.name}»؟`)) return;
+    await api(`/packages/${p.id}`, { method: 'DELETE' });
+    load();
+  }
+
   function startEdit(p: any) {
     setEditing(p);
     setForm({
@@ -155,7 +161,10 @@ export default function PackagesPage() {
                 <h3 className="font-bold text-lg">{p.name}</h3>
                 <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 mt-1 inline-block">سنوي — دفعة واحدة</span>
               </div>
-              <button onClick={() => startEdit(p)} className="text-xs text-primary hover:underline">تعديل</button>
+              <div className="flex gap-2">
+                <button onClick={() => startEdit(p)} className="text-xs text-primary hover:underline">تعديل</button>
+                <button onClick={() => handleDelete(p)} className="text-xs text-red-600 hover:underline">حذف</button>
+              </div>
             </div>
             <div className="mt-4">
               <p className="text-3xl font-bold text-primary">
@@ -181,7 +190,13 @@ export default function PackagesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {packages.filter((p) => p.package_type !== 'annual' && p.is_active).map((p) => (
               <div key={p.id} className="card">
-                <h3 className="font-bold">{p.name}</h3>
+                <div className="flex justify-between items-start">
+                  <h3 className="font-bold">{p.name}</h3>
+                  <div className="flex gap-2">
+                    <button onClick={() => startEdit(p)} className="text-xs text-primary hover:underline">تعديل</button>
+                    <button onClick={() => handleDelete(p)} className="text-xs text-red-600 hover:underline">حذف</button>
+                  </div>
+                </div>
                 <p className="text-sm mt-2">السعر: {p.monthly_price || p.annual_price || '—'} ج.م</p>
                 <p className="text-sm">الساعات: {p.included_hours}</p>
               </div>
