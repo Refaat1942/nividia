@@ -16,10 +16,11 @@ services:
       - ./postgres-entrypoint.sh:/postgres-entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/postgres-entrypoint.sh"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-office} -d ${POSTGRES_DB:-fratelanza_office}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U office -d fratelanza_office"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 45s
     networks:
       - fratelanza_office_net
 
