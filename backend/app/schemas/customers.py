@@ -53,6 +53,13 @@ class CustomerUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_email_to_none(cls, v):
+        if v == "":
+            return None
+        return v
+
     @field_validator("phone")
     @classmethod
     def check_phone(cls, v: Optional[str]) -> Optional[str]:

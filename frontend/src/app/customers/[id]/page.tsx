@@ -15,7 +15,11 @@ export default function CustomerProfilePage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
   const [showEdit, setShowEdit] = useState(false);
+  const [showPackage, setShowPackage] = useState(false);
+  const [packages, setPackages] = useState<any[]>([]);
+  const [packageForm, setPackageForm] = useState({ package_id: '', start_date: '', end_date: '', price: '' });
   const [editForm, setEditForm] = useState<any>({});
+  const [error, setError] = useState('');
 
   useEffect(() => {
     api<any>(`/customers/${id}`).then(setCustomer).catch(console.error);
@@ -25,9 +29,57 @@ export default function CustomerProfilePage() {
 
   async function saveEdit(e: React.FormEvent) {
     e.preventDefault();
-    await api(`/customers/${id}`, { method: 'PATCH', body: JSON.stringify(editForm) });
-    setShowEdit(false);
-    api<any>(`/customers/${id}`).then(setCustomer);
+    setError('');
+    try {
+      await api(`/customers/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          full_name: editForm.full_name,
+          phone: editForm.phone,
+          email: editForm.email || null,
+          company_name: editForm.company_name || null,
+          address: editForm.address || null,
+          status: editForm.status,
+        }),
+      });
+      setShowEdit(false);
+      api<any>(`/customers/${id}`).then(setCustomer);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'خطأ في الحفظ');
+    }
+  }
+
+  async function assignPackage(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    try {
+      const selected = packages.find((p) => p.id === packageForm.package_id);
+      await api('/packages/subscriptions', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer_id: id,
+          package_id: packageForm.package_id,
+          subscription_type: selected?.package_type || 'annual',
+          start_date: packageForm.start_date,
+          end_date: packageForm.end_date || null,
+          price: packageForm.price ? parseFloat(packageForm.price) : (selected?.annual_price || null),
+        }),
+      });
+      setShowPackage(false);
+      setPackageForm({ package_id: '', start_date: '', end_date: '', price: '' });
+      api<any>(`/customers/${id}`).then(setCustomer);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'فشل تعيين الباقة');
+    }
+  }
+
+  function openPackageModal() {
+    api<any>('/packages?active_only=true').then((d) => setPackages(d.items || [])).catch(console.error);
+    const today = new Date().toISOString().slice(0, 10);
+    const nextYear = new Date();
+    nextYear.setFullYear(nextYear.getFullYear() + 1);
+    setPackageForm({ package_id: '', start_date: today, end_date: nextYear.toISOString().slice(0, 10), price: '' });
+    setShowPackage(true);
   }
 
   async function addBonus() {
@@ -45,6 +97,7 @@ export default function CustomerProfilePage() {
   const hours = customer.hours_summary || {};
   const tabs = [
     { key: 'info', label: 'بيانات العميل' },
+    { key: 'package', label: 'الباقة' },
     { key: 'hours', label: 'الساعات' },
     { key: 'contract', label: 'العقد' },
     { key: 'sessions', label: 'الجلسات' },
@@ -66,9 +119,14 @@ export default function CustomerProfilePage() {
               )}
             </div>
           </div>
-          <button onClick={() => { setEditForm({ full_name: customer.full_name, phone: customer.phone, email: customer.email || '', address: customer.address || '', company_name: customer.company_name || '', status: customer.status }); setShowEdit(true); }} className="btn-secondary text-sm">تعديل البيانات</button>
+          <div className="flex gap-2">
+            <button onClick={openPackageModal} className="btn-primary text-sm">+ إضافة باقة</button>
+            <button onClick={() => { setEditForm({ full_name: customer.full_name, phone: customer.phone, email: customer.email || '', address: customer.address || '', company_name: customer.company_name || '', status: customer.status }); setShowEdit(true); }} className="btn-secondary text-sm">تعديل البيانات</button>
+          </div>
         </div>
       </div>
+      {error && <div className="card mb-4 bg-red-50 text-red-700 text-sm">{error}</div>}
+
       <Modal open={showEdit} title="تعديل بيانات العميل" onClose={() => setShowEdit(false)}>
         <form onSubmit={saveEdit} className="grid grid-cols-2 gap-4">
           <input className="input" value={editForm.full_name || ''} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
@@ -77,6 +135,39 @@ export default function CustomerProfilePage() {
           <input className="input" value={editForm.company_name || ''} onChange={(e) => setEditForm({ ...editForm, company_name: e.target.value })} />
           <input className="input col-span-2" value={editForm.address || ''} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <button type="submit" className="btn-primary col-span-2">حفظ</button>
+        </form>
+      </Modal>
+
+      <Modal open={showPackage} title="إضافة باقة للعميل" onClose={() => setShowPackage(false)}>
+        <form onSubmit={assignPackage} className="space-y-4">
+          <select className="input" value={packageForm.package_id} onChange={(e) => {
+            const pkg = packages.find((p) => p.id === e.target.value);
+            setPackageForm({
+              ...packageForm,
+              package_id: e.target.value,
+              price: pkg?.annual_price ? String(pkg.annual_price) : '',
+            });
+          }} required>
+            <option value="">اختر الباقة</option>
+            {packages.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} — {p.annual_price || p.monthly_price} ج.م ({p.included_hours} ساعة)
+              </option>
+            ))}
+          </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm text-slate-500">تاريخ البداية</label>
+              <input type="date" className="input mt-1" value={packageForm.start_date} onChange={(e) => setPackageForm({ ...packageForm, start_date: e.target.value })} required />
+            </div>
+            <div>
+              <label className="text-sm text-slate-500">تاريخ النهاية</label>
+              <input type="date" className="input mt-1" value={packageForm.end_date} onChange={(e) => setPackageForm({ ...packageForm, end_date: e.target.value })} />
+            </div>
+          </div>
+          <input className="input" placeholder="السعر (ج.م)" value={packageForm.price} onChange={(e) => setPackageForm({ ...packageForm, price: e.target.value })} />
+          <p className="text-xs text-slate-500">سيتم إضافة ساعات الباقة تلقائياً لرصيد العميل</p>
+          <button type="submit" className="btn-primary">تعيين الباقة</button>
         </form>
       </Modal>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -103,6 +194,23 @@ export default function CustomerProfilePage() {
           <div><span className="text-slate-500">المستندات:</span> {customer.documents_count}</div>
           <div><span className="text-slate-500">الحجوزات:</span> {customer.bookings_count}</div>
           <div><span className="text-slate-500">المدفوعات:</span> {customer.payments_count}</div>
+        </div>
+      )}
+      {tab === 'package' && (
+        <div className="card">
+          <h3 className="font-semibold mb-4">الباقة الحالية</h3>
+          {customer.active_subscription ? (
+            <div className="text-sm space-y-2">
+              <p><span className="text-slate-500">الباقة:</span> <strong>{customer.active_subscription.package_name}</strong></p>
+              <p><span className="text-slate-500">النوع:</span> {customer.active_subscription.subscription_type}</p>
+              <p><span className="text-slate-500">من:</span> {customer.active_subscription.start_date}</p>
+              <p><span className="text-slate-500">إلى:</span> {customer.active_subscription.end_date || '—'}</p>
+              <p><span className="text-slate-500">الحالة:</span> {customer.active_subscription.status}</p>
+            </div>
+          ) : (
+            <p className="text-slate-500 mb-4">لا توجد باقة نشطة لهذا العميل</p>
+          )}
+          <button onClick={openPackageModal} className="btn-primary mt-4">+ إضافة باقة</button>
         </div>
       )}
       {tab === 'hours' && (

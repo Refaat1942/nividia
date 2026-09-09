@@ -30,7 +30,15 @@ export default function CustomersPage() {
     if (!editing && !nationalIdRegex.test(form.national_id)) { setError('الرقم القومي غير صالح'); return; }
     try {
       if (editing) {
-        await api(`/customers/${editing.id}`, { method: 'PATCH', body: JSON.stringify(form) });
+        const body = {
+          full_name: form.full_name,
+          phone: form.phone,
+          email: form.email || null,
+          company_name: form.company_name || null,
+          address: form.address || null,
+          status: form.status,
+        };
+        await api(`/customers/${editing.id}`, { method: 'PATCH', body: JSON.stringify(body) });
         setEditing(null);
       } else {
         await api('/customers', { method: 'POST', body: JSON.stringify(form) });

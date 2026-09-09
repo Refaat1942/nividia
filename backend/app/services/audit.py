@@ -1,9 +1,25 @@
 import uuid
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.models.entities import AuditLog
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (uuid.UUID, datetime, date)):
+        return str(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 def log_audit(
@@ -22,8 +38,8 @@ def log_audit(
         action=action,
         module=module,
         record_id=record_id,
-        old_value=old_value,
-        new_value=new_value,
+        old_value=_json_safe(old_value),
+        new_value=_json_safe(new_value),
         ip_address=ip_address,
     )
     db.add(entry)
