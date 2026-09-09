@@ -82,6 +82,19 @@ export default function SessionsPage() {
     }
   }
 
+  async function handleDeleteSession(sessionId: string, customerName?: string) {
+    if (!confirm(`حذف جلسة ${customerName || ''}؟`)) return;
+    setLoading(true);
+    try {
+      await api(`/sessions/${sessionId}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'فشل الحذف');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleCheckOut(sessionId: string) {
     if (!confirm('تأكيد تسجيل الانصراف وخصم الساعات؟')) return;
     setLoading(true);
@@ -155,7 +168,7 @@ export default function SessionsPage() {
                   )}
                 </div>
                 {r.is_checked_in && r.session?.id && (
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-end gap-4">
                     <button
                       type="button"
                       onClick={() => handleCheckOut(r.session.id)}
@@ -163,6 +176,14 @@ export default function SessionsPage() {
                       disabled={loading}
                     >
                       تسجيل انصراف الآن
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSession(r.session.id, r.customer_name)}
+                      className="text-sm text-red-600 hover:underline"
+                      disabled={loading}
+                    >
+                      حذف
                     </button>
                   </div>
                 )}
@@ -232,13 +253,16 @@ export default function SessionsPage() {
                       المتبقي: {s.remaining_time?.display_short || formatRemainingFromHours(s.remaining_hours ?? 0)}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleCheckOut(s.id)}
-                    className="btn-primary bg-red-600 hover:bg-red-700 whitespace-nowrap"
-                    disabled={loading}
-                  >
-                    تسجيل انصراف
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => handleCheckOut(s.id)}
+                      className="btn-primary bg-red-600 hover:bg-red-700 whitespace-nowrap"
+                      disabled={loading}
+                    >
+                      تسجيل انصراف
+                    </button>
+                    <button onClick={() => handleDeleteSession(s.id, s.customer_name)} className="text-xs text-red-600 hover:underline" disabled={loading}>حذف</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -258,6 +282,7 @@ export default function SessionsPage() {
                 <th className="p-3 text-right">المدة</th>
                 <th className="p-3 text-right">الخصم</th>
                 <th className="p-3 text-right">الحالة</th>
+                <th className="p-3 text-right">إجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -275,10 +300,13 @@ export default function SessionsPage() {
                       {s.status === 'checked_in' ? 'حاضر' : 'منصرف'}
                     </span>
                   </td>
+                  <td className="p-3">
+                    <button onClick={() => handleDeleteSession(s.id, s.customer_name)} className="text-red-600 hover:underline" disabled={loading}>حذف</button>
+                  </td>
                 </tr>
               ))}
               {history.length === 0 && (
-                <tr><td colSpan={6} className="p-6 text-center text-slate-500">لا توجد جلسات اليوم</td></tr>
+                <tr><td colSpan={7} className="p-6 text-center text-slate-500">لا توجد جلسات اليوم</td></tr>
               )}
             </tbody>
           </table>

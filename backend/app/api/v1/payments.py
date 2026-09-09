@@ -82,6 +82,25 @@ def create_payment(data: PaymentCreate, request: Request, db: DbSession, user: C
     return payment
 
 
+@router.delete("/{payment_id}")
+def delete_payment(payment_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    payment = db.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(404, "الدفعة غير موجودة")
+    log_audit(
+        db,
+        user_id=user.id,
+        action="delete",
+        module="payments",
+        record_id=str(payment_id),
+        old_value={"amount": float(payment.amount), "customer_id": str(payment.customer_id)},
+        ip_address=get_client_ip(request),
+    )
+    db.delete(payment)
+    db.commit()
+    return {"message": "تم حذف الدفعة"}
+
+
 @router.patch("/{payment_id}")
 def update_payment(payment_id: uuid.UUID, data: PaymentUpdate, request: Request, db: DbSession, user: CurrentUser):
     payment = db.get(Payment, payment_id)

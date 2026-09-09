@@ -30,6 +30,12 @@ export default function NotificationsBell() {
     load();
   }
 
+  async function deleteNotification(id: string) {
+    if (!confirm('حذف هذا الإشعار؟')) return;
+    await api(`/notifications/${id}`, { method: 'DELETE' });
+    load();
+  }
+
   const typeIcon: Record<string, string> = {
     session_checkin: '🟢',
     session_checkout: '🔴',
@@ -67,24 +73,34 @@ export default function NotificationsBell() {
               <p className="p-4 text-center text-slate-500 text-sm">لا توجد إشعارات</p>
             ) : (
               items.map((n) => (
-                <button
+                <div
                   key={n.id}
-                  onClick={() => !n.is_read && markRead(n.id)}
                   className={`w-full text-right p-3 border-b hover:bg-slate-50 transition ${
                     !n.is_read ? 'bg-blue-50' : ''
                   }`}
                 >
                   <div className="flex gap-2">
                     <span>{typeIcon[n.notification_type] || '📌'}</span>
-                    <div className="flex-1 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => !n.is_read && markRead(n.id)}
+                      className="flex-1 min-w-0 text-right"
+                    >
                       <p className="text-sm font-medium truncate">{n.title}</p>
                       <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
                       <p className="text-xs text-slate-400 mt-1">
                         {n.created_at ? new Date(n.created_at).toLocaleString('ar-EG') : ''}
                       </p>
-                    </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteNotification(n.id)}
+                      className="text-xs text-red-600 hover:underline shrink-0 self-start"
+                    >
+                      حذف
+                    </button>
                   </div>
-                </button>
+                </div>
               ))
             )}
           </div>

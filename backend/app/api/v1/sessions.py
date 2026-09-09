@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip
-from app.models.entities import Customer, CustomerSession, SessionStatus
+from app.models.entities import Customer, CustomerSession, HoursTransaction, SessionStatus
 from app.services.audit import log_audit
 from app.services.hours import get_customer_balance, get_hours_summary
 from app.services.notify import notify_admins
@@ -162,6 +162,29 @@ def session_check_in(data: CheckInRequest, request: Request, db: DbSession, user
     db.commit()
     db.refresh(session)
     return session_to_dict(session, customer, include_live=True)
+
+
+@router.delete("/{session_id}")
+def delete_session(session_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    session = db.get(CustomerSession, session_id)
+    if not session:
+        raise HTTPException(404, "الجلسة غير موجودة")
+
+    if session.hours_transaction_id:
+        tx = db.get(HoursTransaction, session.hours_transaction_id)
+        if tx:
+            db.delete(tx)
+    db.delete(session)
+    log_audit(
+        db,
+        user_id=user.id,
+        action="delete",
+        module="sessions",
+        record_id=str(session_id),
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+    return {"message": "تم حذف الجلسة"}
 
 
 @router.post("/{session_id}/check-out")

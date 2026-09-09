@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api, apiUpload, downloadFile, openPrintPage } from '@/lib/api';
@@ -9,6 +9,7 @@ import { formatElapsed, formatRemainingFromHours } from '@/lib/time';
 
 export default function CustomerProfilePage() {
   const { id } = useParams();
+  const router = useRouter();
   const [customer, setCustomer] = useState<any>(null);
   const [tab, setTab] = useState('info');
   const [bonusAmount, setBonusAmount] = useState('');
@@ -108,6 +109,43 @@ export default function CustomerProfilePage() {
     setShowPackage(true);
   }
 
+  async function handleDeleteCustomer() {
+    if (!confirm(`حذف العميل «${customer?.full_name}»؟`)) return;
+    await api(`/customers/${id}`, { method: 'DELETE' });
+    router.push('/customers');
+  }
+
+  async function handleDeletePayment(paymentId: string) {
+    if (!confirm('حذف هذه الدفعة؟')) return;
+    await api(`/payments/${paymentId}`, { method: 'DELETE' });
+    api<any>(`/payments?customer_id=${id}`).then((d) => setPayments(d.items || []));
+  }
+
+  async function handleDeleteDocument(docId: string) {
+    if (!confirm('حذف هذا المستند؟')) return;
+    await api(`/documents/${docId}`, { method: 'DELETE' });
+    api<any>(`/documents?customer_id=${id}`).then((d) => setDocuments(d.items || []));
+  }
+
+  async function handleDeleteContract(contractId: string, number: string) {
+    if (!confirm(`حذف العقد ${number}؟`)) return;
+    await api(`/contracts/${contractId}`, { method: 'DELETE' });
+    api<any>(`/contracts?customer_id=${id}`).then((d) => setContracts(d.items));
+  }
+
+  async function handleDeleteSession(sessionId: string) {
+    if (!confirm('حذف هذه الجلسة؟')) return;
+    await api(`/sessions/${sessionId}`, { method: 'DELETE' });
+    reloadSessions();
+    reloadCustomer();
+  }
+
+  async function handleDeleteSubscription(subscriptionId: string) {
+    if (!confirm('إلغاء اشتراك الباقة؟')) return;
+    await api(`/packages/subscriptions/${subscriptionId}`, { method: 'DELETE' });
+    reloadCustomer();
+  }
+
   async function addBonus() {
     await api(`/customers/${id}/hours`, {
       method: 'POST',
@@ -182,9 +220,10 @@ export default function CustomerProfilePage() {
               الوقت المتبقي: {hours.remaining_time?.display_short || formatRemainingFromHours(hours.remaining_hours || 0)}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button onClick={openPackageModal} className="btn-primary text-sm">+ إضافة باقة</button>
             <button onClick={() => { setEditForm({ full_name: customer.full_name, phone: customer.phone, email: customer.email || '', address: customer.address || '', company_name: customer.company_name || '', status: customer.status }); setShowEdit(true); }} className="btn-secondary text-sm">تعديل البيانات</button>
+            <button onClick={handleDeleteCustomer} className="text-sm px-3 py-2 rounded-lg border border-red-300 text-red-700 hover:bg-red-50">حذف العميل</button>
           </div>
         </div>
       </div>
@@ -272,6 +311,7 @@ export default function CustomerProfilePage() {
               <p><span className="text-slate-500">من:</span> {customer.active_subscription.start_date}</p>
               <p><span className="text-slate-500">إلى:</span> {customer.active_subscription.end_date || '—'}</p>
               <p><span className="text-slate-500">الحالة:</span> {customer.active_subscription.status}</p>
+              <button onClick={() => handleDeleteSubscription(customer.active_subscription.id)} className="text-red-600 hover:underline text-sm mt-2">حذف الاشتراك</button>
             </div>
           ) : (
             <p className="text-slate-500 mb-4">لا توجد باقة نشطة لهذا العميل</p>
@@ -307,7 +347,7 @@ export default function CustomerProfilePage() {
           </form>
           <table className="w-full text-sm">
             <thead><tr className="table-head">
-              <th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">المبلغ</th><th className="p-2 text-right">الطريقة</th><th className="p-2 text-right">الحالة</th>
+              <th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">المبلغ</th><th className="p-2 text-right">الطريقة</th><th className="p-2 text-right">الحالة</th><th className="p-2 text-right">إجراءات</th>
             </tr></thead>
             <tbody>
               {payments.map((p) => (
@@ -316,6 +356,9 @@ export default function CustomerProfilePage() {
                   <td className="p-2">{Number(p.amount).toLocaleString('ar-EG')} ج.م</td>
                   <td className="p-2">{p.payment_method}</td>
                   <td className="p-2">{p.status}</td>
+                  <td className="p-2">
+                    <button onClick={() => handleDeletePayment(p.id)} className="text-red-600 hover:underline">حذف</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -339,8 +382,9 @@ export default function CustomerProfilePage() {
                 <tr key={d.id} className="border-t">
                   <td className="p-2">{d.name}</td>
                   <td className="p-2">{d.document_type}</td>
-                  <td className="p-2">
+                  <td className="p-2 space-x-2 space-x-reverse">
                     <button onClick={() => downloadFile(`/documents/${d.id}/download`, d.name)} className="text-primary hover:underline">تحميل</button>
+                    <button onClick={() => handleDeleteDocument(d.id)} className="text-red-600 hover:underline">حذف</button>
                   </td>
                 </tr>
               ))}
@@ -372,6 +416,7 @@ export default function CustomerProfilePage() {
                     <button onClick={() => api<any>(`/contracts/${c.id}`).then(setViewingContract)} className="text-primary hover:underline">عرض</button>
                     <button onClick={() => downloadFile(`/contracts/${c.id}/download`, `${c.contract_number}.docx`)} className="text-primary hover:underline">تحميل</button>
                     <button onClick={() => openPrintPage(`/contracts/${c.id}/print`)} className="text-primary hover:underline">طباعة</button>
+                    <button onClick={() => handleDeleteContract(c.id, c.contract_number)} className="text-red-600 hover:underline">حذف</button>
                   </td>
                 </tr>
               ))}
@@ -412,6 +457,7 @@ export default function CustomerProfilePage() {
                 <th className="p-3 text-right">المدة</th>
                 <th className="p-3 text-right">الخصم</th>
                 <th className="p-3 text-right">الحالة</th>
+                <th className="p-3 text-right">إجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -431,10 +477,13 @@ export default function CustomerProfilePage() {
                       {s.status === 'checked_in' ? 'حاضر' : 'منصرف'}
                     </span>
                   </td>
+                  <td className="p-3">
+                    <button onClick={() => handleDeleteSession(s.id)} className="text-red-600 hover:underline">حذف</button>
+                  </td>
                 </tr>
               ))}
               {sessions.length === 0 && (
-                <tr><td colSpan={6} className="p-6 text-center text-slate-500">لا توجد جلسات</td></tr>
+                <tr><td colSpan={7} className="p-6 text-center text-slate-500">لا توجد جلسات</td></tr>
               )}
             </tbody>
           </table>

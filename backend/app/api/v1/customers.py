@@ -12,9 +12,11 @@ from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import (
     Contract,
     Customer,
+    CustomerSession,
     CustomerSubscription,
     CustomerStatus,
     Document,
+    HoursTransaction,
     HoursTransactionType,
     Package,
     Payment,
@@ -145,6 +147,31 @@ def create_customer(data: CustomerCreate, request: Request, db: DbSession, user:
     db.commit()
     db.refresh(customer)
     return customer
+
+
+@router.delete("/hours-transactions/{transaction_id}")
+def delete_hours_transaction(transaction_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    tx = db.get(HoursTransaction, transaction_id)
+    if not tx:
+        raise HTTPException(404, "العملية غير موجودة")
+    linked = db.scalars(
+        select(CustomerSession).where(CustomerSession.hours_transaction_id == transaction_id)
+    ).all()
+    for session in linked:
+        session.hours_transaction_id = None
+        session.hours_deducted = None
+    log_audit(
+        db,
+        user_id=user.id,
+        action="delete",
+        module="hours",
+        record_id=str(transaction_id),
+        old_value={"amount": float(tx.amount), "customer_id": str(tx.customer_id)},
+        ip_address=get_client_ip(request),
+    )
+    db.delete(tx)
+    db.commit()
+    return {"message": "تم حذف العملية"}
 
 
 @router.get("/{customer_id}", response_model=CustomerProfileResponse)

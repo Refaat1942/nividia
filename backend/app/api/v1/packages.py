@@ -138,3 +138,21 @@ def assign_subscription(data: SubscriptionCreate, request: Request, db: DbSessio
               record_id=str(sub.id), new_value=data.model_dump(), ip_address=get_client_ip(request))
     db.commit()
     return {"message": "تم تعيين الباقة", "subscription_id": str(sub.id)}
+
+
+@router.delete("/subscriptions/{subscription_id}")
+def delete_subscription(subscription_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    sub = db.get(CustomerSubscription, subscription_id)
+    if not sub:
+        raise HTTPException(404, "الاشتراك غير موجود")
+    sub.status = SubscriptionStatus.CANCELLED.value
+    log_audit(
+        db,
+        user_id=user.id,
+        action="delete",
+        module="subscriptions",
+        record_id=str(subscription_id),
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+    return {"message": "تم إلغاء الاشتراك"}

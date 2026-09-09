@@ -106,6 +106,32 @@ def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, db: DbSe
     return _user_dict(target, list(roles))
 
 
+@router.delete("/{user_id}")
+def delete_user(user_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    from datetime import datetime, timezone
+
+    if user_id == user.id:
+        raise HTTPException(400, "لا يمكن حذف حسابك الحالي")
+    target = db.get(User, user_id)
+    if not target or target.deleted_at:
+        raise HTTPException(404, "المستخدم غير موجود")
+    if target.is_superuser:
+        raise HTTPException(400, "لا يمكن حذف مدير النظام")
+    target.deleted_at = datetime.now(timezone.utc)
+    target.is_active = False
+    log_audit(
+        db,
+        user_id=user.id,
+        action="delete",
+        module="users",
+        record_id=str(user_id),
+        new_value={"username": target.username},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+    return {"message": "تم حذف المستخدم"}
+
+
 @router.post("/{user_id}/reset-password")
 def reset_user_password(
     user_id: uuid.UUID,

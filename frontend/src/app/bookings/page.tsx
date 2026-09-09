@@ -96,7 +96,7 @@ export default function BookingsPage() {
   }
 
   async function cancelBooking(id: string) {
-    if (!confirm('إلغاء الحجز؟')) return;
+    if (!confirm('حذف الحجز؟')) return;
     await api(`/bookings/${id}`, { method: 'DELETE' });
     loadBookings();
     loadAvailability();
@@ -260,7 +260,7 @@ export default function BookingsPage() {
                 <td className="p-3"><span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700">{b.booking_status}</span></td>
                 <td className="p-3 space-x-3 space-x-reverse">
                   <button onClick={() => { setEditing(b); setForm({ customer_id: b.customer_id, room_id: b.room_id, booking_date: b.booking_date, start_time: b.start_time, end_time: b.end_time, hours: String(b.hours), booking_status: b.booking_status, payment_status: b.payment_status, notes: b.notes || '' }); setShowForm(true); }} className="text-primary hover:underline">تعديل</button>
-                  <button onClick={() => cancelBooking(b.id)} className="text-red-600 hover:underline">إلغاء</button>
+                  <button onClick={() => cancelBooking(b.id)} className="text-red-600 hover:underline">حذف</button>
                 </td>
               </tr>
             ))}

@@ -44,6 +44,16 @@ def list_notifications(db: DbSession, user: CurrentUser, unread_only: bool = Fal
     }
 
 
+@router.delete("/{notification_id}")
+def delete_notification(notification_id: str, db: DbSession, user: CurrentUser):
+    note = db.get(Notification, uuid.UUID(notification_id))
+    if not note:
+        raise HTTPException(404, "الإشعار غير موجود")
+    db.delete(note)
+    db.commit()
+    return {"message": "تم حذف الإشعار"}
+
+
 @router.post("/{notification_id}/read")
 def mark_notification_read(notification_id: str, db: DbSession, user: CurrentUser):
     note = db.get(Notification, uuid.UUID(notification_id))

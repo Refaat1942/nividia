@@ -16,6 +16,12 @@ export default function PaymentsPage() {
   function load() { api<any>('/payments').then((d) => { setPayments(d.items); setTotal(d.total_amount); }).catch(console.error); }
   useEffect(() => { load(); api<any>('/customers').then((d) => setCustomers(d.items)).catch(console.error); }, []);
 
+  async function handleDelete(p: any) {
+    if (!confirm(`حذف دفعة ${Number(p.amount).toLocaleString('ar-EG')} ج.م؟`)) return;
+    await api(`/payments/${p.id}`, { method: 'DELETE' });
+    load();
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const body = { ...form, amount: parseFloat(form.amount) };
@@ -68,8 +74,9 @@ export default function PaymentsPage() {
                 <td className="p-3">{p.payment_date}</td>
                 <td className="p-3">{p.payment_method}</td>
                 <td className="p-3"><span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700">{p.status}</span></td>
-                <td className="p-3">
+                <td className="p-3 space-x-2 space-x-reverse">
                   <button onClick={() => { setEditing(p); setForm({ customer_id: p.customer_id, amount: String(p.amount), payment_date: p.payment_date, payment_method: p.payment_method, status: p.status, notes: p.notes || '', reference: p.reference || '' }); }} className="text-primary hover:underline">تعديل</button>
+                  <button onClick={() => handleDelete(p)} className="text-red-600 hover:underline">حذف</button>
                 </td>
               </tr>
             ))}

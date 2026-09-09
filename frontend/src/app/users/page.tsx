@@ -89,6 +89,16 @@ export default function UsersPage() {
     load();
   }
 
+  async function handleDeleteUser(u: any) {
+    if (!confirm(`حذف المستخدم «${u.full_name}»؟`)) return;
+    try {
+      await api(`/users/${u.id}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'فشل الحذف');
+    }
+  }
+
   async function handleResetPassword(e: React.FormEvent) {
     e.preventDefault();
     setResetError('');
@@ -205,6 +215,9 @@ export default function UsersPage() {
                       >
                         إعادة تعيين كلمة المرور
                       </button>
+                    )}
+                    {!u.is_superuser && u.id !== authUser?.id && (
+                      <button onClick={() => handleDeleteUser(u)} className="text-red-600 hover:underline">حذف</button>
                     )}
                   </td>
                 </tr>
