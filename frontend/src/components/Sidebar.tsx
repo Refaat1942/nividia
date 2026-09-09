@@ -44,8 +44,12 @@ export default function Sidebar() {
           </Link>
         ))}
       </nav>
-      <div className="p-4 border-t border-slate-700">
-        <button onClick={logout} className="w-full text-sm text-slate-400 hover:text-white transition">
+      <div className="p-4 border-t border-slate-700 shrink-0">
+        <button
+          type="button"
+          onClick={logout}
+          className="w-full px-3 py-2.5 rounded-lg text-sm font-medium bg-slate-800 text-slate-200 hover:bg-red-600 hover:text-white transition"
+        >
           تسجيل الخروج
         </button>
       </div>
