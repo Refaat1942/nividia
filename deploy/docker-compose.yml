@@ -13,8 +13,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-fratelanza_office}
     volumes:
       - fratelanza_office_postgres_data:/var/lib/postgresql/data
-      - ./postgres-entrypoint.sh:/postgres-entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/postgres-entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U office -d fratelanza_office"]
       interval: 5s

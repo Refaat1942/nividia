@@ -31,7 +31,7 @@ fi
 
 write_deploy_env "${DEPLOY_DIR}"
 
-chmod +x postgres-entrypoint.sh backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
+chmod +x backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
 
 docker compose -f docker-compose.yml down 2>/dev/null || true
 

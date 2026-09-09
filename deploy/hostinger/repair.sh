@@ -7,7 +7,8 @@ DEPLOY_DIR="${INSTALL_DIR}/deploy"
 SECRETS_FILE="${DEPLOY_DIR}/.secrets"
 
 cd "${INSTALL_DIR}"
-git pull origin main 2>/dev/null || true
+git fetch origin main 2>/dev/null || true
+git reset --hard origin/main 2>/dev/null || true
 cd "${DEPLOY_DIR}"
 
 source hostinger/write-env.sh
@@ -18,8 +19,8 @@ load_or_create_secrets "${SECRETS_FILE}"
 save_secrets "${SECRETS_FILE}"
 write_deploy_env "${DEPLOY_DIR}"
 
-chmod +x postgres-entrypoint.sh backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
-sed -i 's/\r$//' postgres-entrypoint.sh backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
+chmod +x backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
+sed -i 's/\r$//' backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
 
 echo "Recreating postgres..."
 docker compose -f docker-compose.yml up -d --force-recreate postgres
