@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 const emptyUserForm = {
-  username: '', full_name: '', email: '', password: '', role_ids: [] as string[],
+  username: '', full_name: '', email: '', password: '', role_ids: [] as string[], is_active: true,
 };
 
 export default function UsersPage() {
@@ -160,7 +160,7 @@ export default function UsersPage() {
                             password: '',
                             is_active: u.is_active,
                             role_ids: roles.filter((r) => u.roles?.includes(r.name)).map((r) => r.id),
-                          } as any);
+                          });
                         }}
                         className="text-primary hover:underline"
                       >
@@ -238,7 +238,7 @@ export default function UsersPage() {
       <Modal open={!!editingUser} title="تعديل مستخدم" onClose={() => setEditingUser(null)}>
         <form onSubmit={handleUpdateUser} className="space-y-4">
           <input className="input" value={userForm.full_name} onChange={(e) => setUserForm({ ...userForm, full_name: e.target.value })} required />
-          <select className="input" value={(userForm as any).is_active ? 'true' : 'false'} onChange={(e) => setUserForm({ ...userForm, is_active: e.target.value === 'true' } as any)}>
+          <select className="input" value={userForm.is_active ? 'true' : 'false'} onChange={(e) => setUserForm({ ...userForm, is_active: e.target.value === 'true' })}>
             <option value="true">نشط</option>
             <option value="false">معطل</option>
           </select>

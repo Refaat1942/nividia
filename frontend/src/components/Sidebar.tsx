@@ -19,8 +19,8 @@ export default function Sidebar() {
   return (
     <aside className="w-64 min-h-screen bg-sidebar text-white flex flex-col fixed right-0 top-0 z-40">
       <div className="p-6 border-b border-slate-700">
-        <h1 className="text-lg font-bold">فراتيلانزا</h1>
-        <p className="text-xs text-slate-400 mt-1">نظام إدارة المكاتب</p>
+        <h1 className="text-lg font-bold">نفيديا</h1>
+        <p className="text-xs text-slate-400 mt-1">إدارة المكاتب والباقات</p>
         {user && (
           <p className="text-xs text-slate-300 mt-2 truncate" title={user.full_name}>
             {user.full_name}

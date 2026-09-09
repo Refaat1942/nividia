@@ -5,22 +5,35 @@ import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
 
-const emptyForm = { name: '', package_type: 'monthly', monthly_price: '', included_hours: '', bonus_hours: '0', is_active: true };
+const emptyForm = {
+  name: '', package_type: 'annual', monthly_price: '', annual_price: '',
+  included_hours: '', bonus_hours: '0', is_active: true,
+};
 
 export default function PackagesPage() {
   const [packages, setPackages] = useState<any[]>([]);
+  const [company, setCompany] = useState<Record<string, string>>({});
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState(emptyForm);
 
-  function load() { api<any>('/packages').then((d) => setPackages(d.items)).catch(console.error); }
+  function load() {
+    api<any>('/packages').then((d) => setPackages(d.items)).catch(console.error);
+    api<Record<string, string>>('/settings').then(setCompany).catch(console.error);
+  }
   useEffect(() => { load(); }, []);
+
+  const annualPackages = packages
+    .filter((p) => p.package_type === 'annual' && p.is_active)
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const body = {
-      name: form.name, package_type: form.package_type,
+      name: form.name,
+      package_type: form.package_type,
       monthly_price: parseFloat(form.monthly_price) || null,
+      annual_price: parseFloat(form.annual_price) || null,
       included_hours: parseFloat(form.included_hours) || 0,
       bonus_hours: parseFloat(form.bonus_hours) || 0,
       is_active: form.is_active,
@@ -39,51 +52,120 @@ export default function PackagesPage() {
   function startEdit(p: any) {
     setEditing(p);
     setForm({
-      name: p.name, package_type: p.package_type,
-      monthly_price: String(p.monthly_price || ''), included_hours: String(p.included_hours || ''),
-      bonus_hours: String(p.bonus_hours || '0'), is_active: p.is_active,
+      name: p.name,
+      package_type: p.package_type,
+      monthly_price: String(p.monthly_price || ''),
+      annual_price: String(p.annual_price || ''),
+      included_hours: String(p.included_hours || ''),
+      bonus_hours: String(p.bonus_hours || '0'),
+      is_active: p.is_active,
     });
   }
 
   return (
     <Layout>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">الباقات</h1>
+        <div>
+          <h1 className="text-2xl font-bold">باقات نفيديا السنوية</h1>
+          <p className="text-slate-500 text-sm">أسعار الخدمات والباقات — دفعة واحدة سنوياً</p>
+        </div>
         <button onClick={() => { setShowForm(true); setForm(emptyForm); }} className="btn-primary">+ باقة جديدة</button>
       </div>
+
+      <div className="card mb-6 bg-gradient-to-l from-blue-50 to-white border-blue-100">
+        <h2 className="font-bold text-blue-900 mb-2">ما الذي تشمله الباقة؟</h2>
+        <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">
+          {company.services_description || 'جاري التحميل...'}
+        </div>
+        {company.multi_year_discount_percent && (
+          <p className="mt-3 text-sm font-medium text-amber-700">
+            عرض السنتين أو أكثر: خصم {company.multi_year_discount_percent}% عن كل سنة إضافية
+          </p>
+        )}
+        {company.address && (
+          <div className="mt-4 pt-4 border-t text-sm text-slate-600">
+            <p className="font-medium">العنوان: {company.address}</p>
+            <div className="flex flex-wrap gap-4 mt-2">
+              {company.maps_url && (
+                <a href={company.maps_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                  موقع على الخريطة
+                </a>
+              )}
+              {company.facebook_url && (
+                <a href={company.facebook_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                  صفحة فيسبوك
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <Modal open={showForm || !!editing} title={editing ? 'تعديل باقة' : 'باقة جديدة'} onClose={() => { setShowForm(false); setEditing(null); }}>
         <form onSubmit={handleSave} className="grid grid-cols-2 gap-4">
           <input className="input" placeholder="اسم الباقة" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           <select className="input" value={form.package_type} onChange={(e) => setForm({ ...form, package_type: e.target.value })}>
-            <option value="monthly">شهري</option><option value="annual">سنوي</option><option value="hourly">بالساعة</option><option value="custom">مخصص</option>
+            <option value="annual">سنوي</option>
+            <option value="monthly">شهري</option>
+            <option value="hourly">بالساعة</option>
+            <option value="custom">مخصص</option>
           </select>
-          <input className="input" placeholder="السعر الشهري" value={form.monthly_price} onChange={(e) => setForm({ ...form, monthly_price: e.target.value })} />
+          <input className="input" placeholder="السعر السنوي (ج.م)" value={form.annual_price} onChange={(e) => setForm({ ...form, annual_price: e.target.value })} />
+          <input className="input" placeholder="السعر الشهري (ج.م)" value={form.monthly_price} onChange={(e) => setForm({ ...form, monthly_price: e.target.value })} />
           <input className="input" placeholder="الساعات المشمولة" value={form.included_hours} onChange={(e) => setForm({ ...form, included_hours: e.target.value })} />
           <input className="input" placeholder="ساعات البونص" value={form.bonus_hours} onChange={(e) => setForm({ ...form, bonus_hours: e.target.value })} />
           {editing && (
             <select className="input" value={form.is_active ? 'true' : 'false'} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })}>
-              <option value="true">نشط</option><option value="false">معطل</option>
+              <option value="true">نشط</option>
+              <option value="false">معطل</option>
             </select>
           )}
           <div className="col-span-2"><button type="submit" className="btn-primary">حفظ</button></div>
         </form>
       </Modal>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {packages.map((p) => (
-          <div key={p.id} className="card">
+        {annualPackages.map((p) => (
+          <div key={p.id} className="card border-t-4 border-t-primary hover:shadow-md transition">
             <div className="flex justify-between items-start">
-              <h3 className="font-bold text-lg">{p.name}</h3>
+              <div>
+                <h3 className="font-bold text-lg">{p.name}</h3>
+                <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 mt-1 inline-block">سنوي — دفعة واحدة</span>
+              </div>
               <button onClick={() => startEdit(p)} className="text-xs text-primary hover:underline">تعديل</button>
             </div>
-            <p className="text-sm text-slate-500 mt-1">{p.package_type}</p>
-            <div className="mt-4 space-y-1 text-sm">
-              <p>السعر: {p.monthly_price || p.annual_price || '—'} ج.م</p>
-              <p>الساعات: {p.included_hours}</p>
-              <p>بونص: {p.bonus_hours}</p>
+            <div className="mt-4">
+              <p className="text-3xl font-bold text-primary">
+                {Number(p.annual_price).toLocaleString('ar-EG')}
+                <span className="text-sm font-normal text-slate-500"> ج.م / سنة</span>
+              </p>
+              <p className="text-lg font-semibold text-slate-700 mt-2">
+                {p.included_hours} ساعة
+              </p>
+              {p.annual_price && p.included_hours > 0 && (
+                <p className="text-xs text-slate-400 mt-1">
+                  ≈ {Math.round(Number(p.annual_price) / Number(p.included_hours))} ج.م / ساعة
+                </p>
+              )}
             </div>
           </div>
         ))}
       </div>
+
+      {packages.filter((p) => p.package_type !== 'annual' && p.is_active).length > 0 && (
+        <div className="mt-8">
+          <h2 className="font-semibold mb-4 text-slate-600">باقات أخرى</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {packages.filter((p) => p.package_type !== 'annual' && p.is_active).map((p) => (
+              <div key={p.id} className="card">
+                <h3 className="font-bold">{p.name}</h3>
+                <p className="text-sm mt-2">السعر: {p.monthly_price || p.annual_price || '—'} ج.م</p>
+                <p className="text-sm">الساعات: {p.included_hours}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

@@ -7,9 +7,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip
-from app.models.entities import BookingStatus, HoursTransactionType, Room, RoomBooking
+from app.models.entities import BookingStatus, Customer, HoursTransactionType, Room, RoomBooking, Setting
 from app.services.audit import log_audit
-from app.services.bookings import has_booking_conflict
+from app.services.bookings import get_day_availability, has_booking_conflict, parse_working_hours
 from app.services.hours import add_hours_transaction, get_customer_balance
 
 router = APIRouter(prefix="/bookings", tags=["الحجوزات"])
@@ -45,15 +45,77 @@ def list_bookings(
     room_id: uuid.UUID | None = None,
     customer_id: uuid.UUID | None = None,
 ):
-    q = select(RoomBooking).where(RoomBooking.deleted_at.is_(None))
+    q = (
+        select(RoomBooking, Room.name, Room.room_number, Customer.full_name)
+        .join(Room, RoomBooking.room_id == Room.id)
+        .join(Customer, RoomBooking.customer_id == Customer.id)
+        .where(RoomBooking.deleted_at.is_(None))
+    )
     if booking_date:
         q = q.where(RoomBooking.booking_date == date.fromisoformat(booking_date))
     if room_id:
         q = q.where(RoomBooking.room_id == room_id)
     if customer_id:
         q = q.where(RoomBooking.customer_id == customer_id)
-    items = db.scalars(q.order_by(RoomBooking.booking_date.desc(), RoomBooking.start_time)).all()
+    rows = db.execute(q.order_by(RoomBooking.booking_date.desc(), RoomBooking.start_time)).all()
+    items = []
+    for booking, room_name, room_number, customer_name in rows:
+        items.append({
+            "id": str(booking.id),
+            "customer_id": str(booking.customer_id),
+            "customer_name": customer_name,
+            "room_id": str(booking.room_id),
+            "room_name": room_name,
+            "room_number": room_number,
+            "booking_date": str(booking.booking_date),
+            "start_time": booking.start_time.strftime("%H:%M") if hasattr(booking.start_time, "strftime") else str(booking.start_time),
+            "end_time": booking.end_time.strftime("%H:%M") if hasattr(booking.end_time, "strftime") else str(booking.end_time),
+            "hours": float(booking.hours),
+            "price": float(booking.price) if booking.price else None,
+            "booking_status": booking.booking_status,
+            "payment_status": booking.payment_status,
+            "notes": booking.notes,
+        })
     return {"items": items}
+
+
+@router.get("/availability")
+def booking_availability(
+    db: DbSession,
+    user: CurrentUser,
+    booking_date: str,
+    room_id: uuid.UUID | None = None,
+):
+    wh = db.scalar(select(Setting).where(Setting.key == "working_hours"))
+    work_start, work_end = parse_working_hours(wh.value if wh else None)
+    return get_day_availability(
+        db,
+        date.fromisoformat(booking_date),
+        room_id=room_id,
+        work_start=work_start,
+        work_end=work_end,
+    )
+
+
+@router.get("/check-slot")
+def check_booking_slot(
+    db: DbSession,
+    user: CurrentUser,
+    room_id: uuid.UUID,
+    booking_date: str,
+    start_time: str,
+    end_time: str,
+    exclude_id: uuid.UUID | None = None,
+):
+    conflict = has_booking_conflict(
+        db,
+        room_id,
+        date.fromisoformat(booking_date),
+        time.fromisoformat(start_time),
+        time.fromisoformat(end_time),
+        exclude_id=exclude_id,
+    )
+    return {"available": not conflict}
 
 
 @router.post("", status_code=201)

@@ -6,6 +6,7 @@ from sqlalchemy import func, select, text
 from app.core.config import get_settings
 from app.core.database import SessionLocal, engine
 from app.core.security import hash_password
+from app.scripts.nividia_catalog import seed_nividia_catalog, seed_nividia_contract_template
 from app.models.entities import (
     ContractTemplateVariable,
     Customer,
@@ -103,7 +104,7 @@ TEMPLATE_VARS = [
 ]
 
 DEFAULT_SETTINGS = {
-    "business_name": "فراتيلانزا",
+    "business_name": "نفيديا",
     "currency": "EGP",
     "working_hours": "9:00-18:00",
 }
@@ -173,6 +174,9 @@ def run_seed() -> None:
             db.flush()
             super_role = role_map["super_admin"]
             db.add(UserRole(user_id=admin.id, role_id=super_role.id))
+
+        seed_nividia_catalog(db)
+        seed_nividia_contract_template(db)
 
         if settings.SEED_DEMO_DATA:
             _seed_demo(db)

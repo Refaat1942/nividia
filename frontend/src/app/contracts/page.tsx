@@ -201,7 +201,13 @@ export default function ContractsPage() {
           <input className="input" placeholder="اسم القالب" value={uploadForm.name} onChange={(e) => setUploadForm({ ...uploadForm, name: e.target.value })} required />
           <input className="input" placeholder="وصف (اختياري)" value={uploadForm.description} onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })} />
           <input type="file" accept=".docx" className="input" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} required />
-          <p className="text-xs text-slate-500">ضع الحقول في Word بين أقواس مزدوجة مثل: {`{{customer_name}}`} أو {`{{اسم_العميل}}`}</p>
+          <p className="text-xs text-slate-500 mb-2">
+            ارفع ملف <strong>عقد نفيديا المحدث 2026.docx</strong> — النظام يكتشف الحقول تلقائياً.
+          </p>
+          <p className="text-xs text-slate-500">
+            في Word استخدم حقول مثل: {`{{customer_name}}`} {`{{national_id}}`} {`{{phone}}`} {`{{package_name}}`} {`{{package_price}}`} {`{{included_hours}}`} {`{{contract_start}}`} {`{{company_address}}`}
+            أو العربية: {`{{اسم_العميل}}`} {`{{الرقم_القومي}}`} {`{{اسم_الباقة}}`}
+          </p>
           <button type="submit" className="btn-primary">رفع وتحليل الحقول</button>
         </form>
       </Modal>

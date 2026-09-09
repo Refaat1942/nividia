@@ -46,10 +46,35 @@ FIELD_ALIASES: dict[str, str] = {
     "تاريخ_اليوم": "today_date",
     "business_name": "business_name",
     "اسم_الشركة_المزودة": "business_name",
+    "company_address": "company_address",
+    "عنوان_الشركة": "company_address",
+    "maps_url": "maps_url",
+    "facebook_url": "facebook_url",
     "customer_code": "customer_code",
     "كود_العميل": "customer_code",
     "used_hours": "used_hours",
     "total_available": "total_available",
+    "اسم_الطرف_الثاني": "customer_name",
+    "اسم الطرف الثاني": "customer_name",
+    "رقم_الهوية": "national_id",
+    "رقم الهوية": "national_id",
+    "التليفون": "phone",
+    "تليفون": "phone",
+    "موبايل": "phone",
+    "البريد_الالكتروني": "email",
+    "قيمة_العقد": "package_price",
+    "قيمة العقد": "package_price",
+    "سعر_العقد": "package_price",
+    "عدد_الساعات": "included_hours",
+    "عدد الساعات": "included_hours",
+    "الساعات": "included_hours",
+    "تاريخ_التعاقد": "contract_start",
+    "تاريخ التعاقد": "contract_start",
+    "تاريخ_الانتهاء": "contract_end",
+    "تاريخ الانتهاء": "contract_end",
+    "عنوان_المقر": "company_address",
+    "عنوان المقر": "company_address",
+    "اسم_نفيديا": "business_name",
 }
 
 FIELD_LABELS_AR: dict[str, str] = {
@@ -74,10 +99,14 @@ FIELD_LABELS_AR: dict[str, str] = {
     "used_hours": "الساعات المستخدمة",
     "total_available": "إجمالي الساعات",
     "today_date": "تاريخ اليوم",
-    "business_name": "اسم الشركة (فراتيلانزا)",
+    "business_name": "اسم الشركة (نفيديا)",
+    "company_address": "عنوان الشركة",
+    "maps_url": "رابط الخريطة",
+    "facebook_url": "رابط فيسبوك",
 }
 
 JINJA_VAR_RE = re.compile(r"\{\{\s*([^}%#][^}]*?)\s*\}\}")
+MERGEFIELD_RE = re.compile(r"MERGEFIELD\s+([^\s\\*]+)", re.IGNORECASE)
 
 
 def _normalize_key(raw: str) -> str:
@@ -97,20 +126,36 @@ def canonicalize_field(raw: str) -> str | None:
     return None
 
 
+def _xml_to_plain(xml: str) -> str:
+    text = re.sub(r"<w:tab[^/]*/>", "\t", xml)
+    text = re.sub(r"<w:br[^/]*/>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    return text
+
+
+def _collect_jinja_vars(text: str, found: set[str]) -> None:
+    for match in JINJA_VAR_RE.finditer(text):
+        raw = match.group(1).strip()
+        if raw and not raw.startswith(("{", "%")):
+            found.add(raw)
+
+
 def extract_docx_variables(docx_path: str) -> list[str]:
     found: set[str] = set()
     try:
         with zipfile.ZipFile(docx_path, "r") as zf:
             xml_parts = [n for n in zf.namelist() if n.endswith(".xml")]
+            merged_plain = ""
             for part in xml_parts:
                 try:
                     text = zf.read(part).decode("utf-8", errors="ignore")
                 except Exception:
                     continue
-                for match in JINJA_VAR_RE.finditer(text):
-                    raw = match.group(1).strip()
-                    if raw and not raw.startswith(("{", "%")):
-                        found.add(raw)
+                _collect_jinja_vars(text, found)
+                merged_plain += _xml_to_plain(text)
+                for match in MERGEFIELD_RE.finditer(text):
+                    found.add(match.group(1).strip())
+            _collect_jinja_vars(merged_plain, found)
     except Exception:
         return []
     return sorted(found)

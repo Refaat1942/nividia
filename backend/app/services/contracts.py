@@ -49,7 +49,10 @@ def build_contract_context(
         "used_hours": str(hours["used_hours"]),
         "total_available": str(hours["total_available"]),
         "today_date": str(date.today()),
-        "business_name": _get_setting(db, "business_name", "فراتيلانزا"),
+        "business_name": _get_setting(db, "business_name", "نفيديا"),
+        "company_address": _get_setting(db, "address", ""),
+        "maps_url": _get_setting(db, "maps_url", ""),
+        "facebook_url": _get_setting(db, "facebook_url", ""),
     }
     if extra:
         ctx.update(extra)
