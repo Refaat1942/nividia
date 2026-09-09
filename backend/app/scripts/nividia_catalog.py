@@ -69,11 +69,11 @@ def seed_nividia_catalog(db) -> None:
         active_skus.add(sku)
         pkg = db.scalar(select(Package).where(Package.name_en == sku, Package.deleted_at.is_(None)))
         if not pkg:
-            pkg = Package(name_en=sku)
+            pkg = Package(name=name, name_en=sku)
             db.add(pkg)
             db.flush()
-
-        pkg.name = name
+        else:
+            pkg.name = name
         pkg.package_type = "annual"
         pkg.annual_price = annual_price
         pkg.monthly_price = None
