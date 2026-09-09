@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
-import { api, apiUpload, downloadFile } from '@/lib/api';
+import { api, apiUpload, downloadFile, openPrintPage } from '@/lib/api';
 import { formatElapsed, formatRemainingFromHours } from '@/lib/time';
 
 export default function CustomerProfilePage() {
@@ -26,6 +26,7 @@ export default function CustomerProfilePage() {
   const [packageForm, setPackageForm] = useState({ package_id: '', start_date: '', end_date: '', price: '' });
   const [editForm, setEditForm] = useState<any>({});
   const [error, setError] = useState('');
+  const [viewingContract, setViewingContract] = useState<any>(null);
 
   function reloadCustomer() {
     api<any>(`/customers/${id}`).then(setCustomer).catch(console.error);
@@ -352,22 +353,53 @@ export default function CustomerProfilePage() {
           <h3 className="font-semibold mb-4">عقود العميل</h3>
           <table className="w-full text-sm">
             <thead><tr className="table-head">
-              <th className="p-3 text-right">رقم العقد</th><th className="p-3 text-right">الحالة</th><th className="p-3 text-right">البداية</th><th className="p-3 text-right">النهاية</th>
+              <th className="p-3 text-right">رقم العقد</th>
+              <th className="p-3 text-right">القالب</th>
+              <th className="p-3 text-right">الحالة</th>
+              <th className="p-3 text-right">البداية</th>
+              <th className="p-3 text-right">النهاية</th>
+              <th className="p-3 text-right">إجراءات</th>
             </tr></thead>
             <tbody>
               {contracts.map((c) => (
                 <tr key={c.id} className="border-t">
-                  <td className="p-3">{c.contract_number}</td>
+                  <td className="p-3 font-medium">{c.contract_number}</td>
+                  <td className="p-3 text-slate-500">{c.template_name || '—'}</td>
                   <td className="p-3">{c.status}</td>
                   <td className="p-3">{c.start_date || '—'}</td>
                   <td className="p-3">{c.end_date || '—'}</td>
+                  <td className="p-3 space-x-2 space-x-reverse">
+                    <button onClick={() => api<any>(`/contracts/${c.id}`).then(setViewingContract)} className="text-primary hover:underline">عرض</button>
+                    <button onClick={() => downloadFile(`/contracts/${c.id}/download`, `${c.contract_number}.docx`)} className="text-primary hover:underline">تحميل</button>
+                    <button onClick={() => openPrintPage(`/contracts/${c.id}/print`)} className="text-primary hover:underline">طباعة</button>
+                  </td>
                 </tr>
               ))}
-              {contracts.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-500">لا توجد عقود</td></tr>}
+              {contracts.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-500">لا توجد عقود</td></tr>}
             </tbody>
           </table>
         </div>
       )}
+
+      <Modal open={!!viewingContract} title={`عقد ${viewingContract?.contract_number || ''}`} onClose={() => setViewingContract(null)} wide>
+        {viewingContract && (
+          <div className="bg-slate-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <tbody>
+                {(viewingContract.fields || []).map((f: any) => (
+                  <tr key={f.field} className="border-t">
+                    <td className="py-2 pr-2 text-slate-500 w-1/3">{f.label_ar}</td>
+                    <td className="py-2 font-medium break-words">{f.value || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!viewingContract.fields?.length && (
+              <p className="text-slate-500 text-sm">لا توجد بيانات — افتح صفحة العقود واضغط «إعادة توليد»</p>
+            )}
+          </div>
+        )}
+      </Modal>
       {tab === 'sessions' && (
         <div className="card overflow-x-auto">
           <h3 className="font-semibold mb-4">سجل الحضور والانصراف</h3>

@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession, get_client_ip
@@ -67,13 +68,21 @@ def _template_dict(tpl: ContractTemplate) -> dict:
     }
 
 
-def _contract_dict(c: Contract, customer: Customer | None = None) -> dict:
+def _contract_dict(c: Contract, customer: Customer | None = None, db: Session | None = None) -> dict:
+    template_name = None
+    fields: list[dict] = []
+    if db:
+        if c.template_id:
+            tpl = db.get(ContractTemplate, c.template_id)
+            template_name = tpl.name if tpl else None
+        fields = _contract_field_rows(db, c)
     return {
         "id": str(c.id),
         "contract_number": c.contract_number,
         "customer_id": str(c.customer_id),
         "customer_name": customer.full_name if customer else None,
         "template_id": str(c.template_id) if c.template_id else None,
+        "template_name": template_name,
         "package_id": str(c.package_id) if c.package_id else None,
         "office_id": str(c.office_id) if c.office_id else None,
         "room_id": str(c.room_id) if c.room_id else None,
@@ -81,8 +90,55 @@ def _contract_dict(c: Contract, customer: Customer | None = None) -> dict:
         "end_date": str(c.end_date) if c.end_date else None,
         "status": c.status,
         "metadata_json": c.metadata_json,
+        "fields": fields,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
+
+
+def _contract_field_rows(db, contract: Contract) -> list[dict]:
+    meta = contract.metadata_json or {}
+    template = db.get(ContractTemplate, contract.template_id) if contract.template_id else None
+    render = meta.get("render") or {}
+    base = meta.get("base") or {}
+
+    if template and (template.variables_json or {}).get("fields"):
+        rows = []
+        for f in template.variables_json["fields"]:
+            raw = f.get("raw")
+            canonical = f.get("canonical")
+            value = render.get(raw) or (base.get(canonical or "") if canonical else "")
+            rows.append({
+                "field": raw,
+                "label_ar": f.get("label_ar") or FIELD_LABELS_AR.get(canonical or "", raw),
+                "value": value,
+                "auto_mapped": f.get("auto_mapped", False),
+            })
+        if rows:
+            return rows
+
+    if base:
+        return [
+            {"field": k, "label_ar": FIELD_LABELS_AR.get(k, k), "value": v, "auto_mapped": True}
+            for k, v in base.items()
+        ]
+
+    customer = db.get(Customer, contract.customer_id)
+    if not customer:
+        return []
+    package = db.get(Package, contract.package_id) if contract.package_id else None
+    office = db.get(Office, contract.office_id) if contract.office_id else None
+    room = db.get(Room, contract.room_id) if contract.room_id else None
+    if template:
+        base_ctx, render_ctx = render_contract_for_customer(db, template, customer, package, office, room, contract)
+        return [
+            {"field": k, "label_ar": FIELD_LABELS_AR.get(k, k), "value": v, "auto_mapped": True}
+            for k, v in (base_ctx or {}).items()
+        ]
+    ctx = build_contract_context(db, customer, package, office, room, contract)
+    return [
+        {"field": k, "label_ar": FIELD_LABELS_AR.get(k, k), "value": v, "auto_mapped": True}
+        for k, v in ctx.items()
+    ]
 
 
 @router.get("/templates")
@@ -258,7 +314,7 @@ def generate_contract(data: ContractGenerateRequest, request: Request, db: DbSes
               new_value={"contract_number": contract.contract_number}, ip_address=get_client_ip(request))
     db.commit()
     db.refresh(contract)
-    return _contract_dict(contract, customer)
+    return _contract_dict(contract, customer, db)
 
 
 @router.get("")
@@ -267,7 +323,16 @@ def list_contracts(db: DbSession, user: CurrentUser, customer_id: uuid.UUID | No
     if customer_id:
         q = q.where(Contract.customer_id == customer_id)
     rows = db.execute(q.order_by(Contract.created_at.desc())).all()
-    return {"items": [_contract_dict(c, cust) for c, cust in rows]}
+    return {"items": [_contract_dict(c, cust, db) for c, cust in rows]}
+
+
+@router.get("/{contract_id}")
+def get_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    customer = db.get(Customer, contract.customer_id)
+    return _contract_dict(contract, customer, db)
 
 
 @router.patch("/{contract_id}")
@@ -286,7 +351,7 @@ def update_contract(contract_id: uuid.UUID, data: ContractUpdate, request: Reque
               new_value={k: str(v) for k, v in updates.items()}, ip_address=get_client_ip(request))
     db.commit()
     customer = db.get(Customer, contract.customer_id)
-    return _contract_dict(contract, customer)
+    return _contract_dict(contract, customer, db)
 
 
 @router.post("/{contract_id}/regenerate")
@@ -311,7 +376,7 @@ def regenerate_contract(contract_id: uuid.UUID, request: Request, db: DbSession,
     log_audit(db, user_id=user.id, action="regenerate", module="contracts", record_id=str(contract_id),
               ip_address=get_client_ip(request))
     db.commit()
-    return _contract_dict(contract, customer)
+    return _contract_dict(contract, customer, db)
 
 
 @router.get("/{contract_id}/download")
@@ -332,14 +397,12 @@ def print_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
     if not contract or contract.deleted_at:
         raise HTTPException(404, "العقد غير موجود")
     customer = db.get(Customer, contract.customer_id)
-    meta = contract.metadata_json or {}
-    fields = meta.get("render") or meta.get("base") or {}
-    if not fields and customer:
-        fields = build_contract_context(db, customer, contract=contract)
+    field_rows = _contract_field_rows(db, contract)
 
     rows = ""
-    for key, value in fields.items():
-        label = FIELD_LABELS_AR.get(key, key)
+    for f in field_rows:
+        label = f.get("label_ar") or f.get("field")
+        value = f.get("value") or ""
         rows += f"<tr><td style='padding:8px;border:1px solid #ddd;font-weight:bold;width:35%'>{label}</td><td style='padding:8px;border:1px solid #ddd'>{value}</td></tr>"
 
     html = f"""<!DOCTYPE html>

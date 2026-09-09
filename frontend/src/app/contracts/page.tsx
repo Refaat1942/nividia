@@ -17,6 +17,7 @@ export default function ContractsPage() {
   const [showGen, setShowGen] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [viewing, setViewing] = useState<any>(null);
   const [preview, setPreview] = useState<any>(null);
   const [form, setForm] = useState({
     customer_id: '', template_id: '', package_id: '', office_id: '', room_id: '', start_date: '', end_date: '',
@@ -107,6 +108,11 @@ export default function ContractsPage() {
     setUploadForm({ name: '', description: '' });
     setUploadFile(null);
     load();
+  }
+
+  async function viewContract(id: string) {
+    const data = await api<any>(`/contracts/${id}`);
+    setViewing(data);
   }
 
   async function saveEdit(e: React.FormEvent) {
@@ -208,6 +214,7 @@ export default function ContractsPage() {
             <thead><tr className="table-head">
               <th className="p-3 text-right">رقم العقد</th>
               <th className="p-3 text-right">العميل</th>
+              <th className="p-3 text-right">القالب</th>
               <th className="p-3 text-right">الحالة</th>
               <th className="p-3 text-right">التاريخ</th>
               <th className="p-3 text-right">إجراءات</th>
@@ -217,9 +224,11 @@ export default function ContractsPage() {
                 <tr key={c.id} className="border-t">
                   <td className="p-3 font-medium">{c.contract_number}</td>
                   <td className="p-3">{c.customer_name || '—'}</td>
+                  <td className="p-3 text-slate-500">{c.template_name || '—'}</td>
                   <td className="p-3">{c.status}</td>
                   <td className="p-3">{c.created_at?.slice(0, 10)}</td>
                   <td className="p-3 space-x-2 space-x-reverse">
+                    <button onClick={() => viewContract(c.id)} className="text-primary hover:underline">عرض البيانات</button>
                     <button onClick={() => setEditing(c)} className="text-primary hover:underline">تعديل</button>
                     <button onClick={() => downloadFile(`/contracts/${c.id}/download`, `${c.contract_number}.docx`)} className="text-primary hover:underline">تحميل</button>
                     <button onClick={() => openPrintPage(`/contracts/${c.id}/print`)} className="text-primary hover:underline">طباعة</button>
@@ -263,12 +272,12 @@ export default function ContractsPage() {
               <option value="">الباقة</option>
               {packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <select className="input-select" value={form.office_id} onChange={(e) => setForm({ ...form, office_id: e.target.value })}>
-              <option value="">المكتب</option>
-              {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            <select className="input-select" value={form.office_id} onChange={(e) => setForm({ ...form, office_id: e.target.value, room_id: '' })}>
+              <option value="">المكتب / مساحة إدارية</option>
+              {offices.map((o) => <option key={o.id} value={o.id}>{o.name} {o.amenities?.space_type === 'manager_office' ? '(مدير)' : ''}</option>)}
             </select>
-            <select className="input-select" value={form.room_id} onChange={(e) => setForm({ ...form, room_id: e.target.value })}>
-              <option value="">الغرفة</option>
+            <select className="input-select" value={form.room_id} onChange={(e) => setForm({ ...form, room_id: e.target.value, office_id: '' })}>
+              <option value="">قاعة اجتماعات</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
             <input type="date" className="input" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
@@ -293,6 +302,47 @@ export default function ContractsPage() {
           ) : null}
           <button type="submit" className="btn-primary w-full md:w-auto">توليد وطباعة العقد</button>
         </form>
+      </Modal>
+
+      <Modal open={!!viewing} title={`بيانات العقد ${viewing?.contract_number || ''}`} onClose={() => setViewing(null)} wide>
+        {viewing && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <p><span className="text-slate-500">العميل:</span> {viewing.customer_name}</p>
+              <p><span className="text-slate-500">القالب:</span> {viewing.template_name || '—'}</p>
+              <p><span className="text-slate-500">الحالة:</span> {viewing.status}</p>
+              <p><span className="text-slate-500">من:</span> {viewing.start_date || '—'} <span className="text-slate-500">إلى:</span> {viewing.end_date || '—'}</p>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+              <h4 className="font-semibold text-sm mb-3">حقول العقد المسجّلة</h4>
+              {viewing.fields?.length ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="table-head">
+                      <th className="p-2 text-right">الحقل</th>
+                      <th className="p-2 text-right">القيمة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewing.fields.map((f: any) => (
+                      <tr key={f.field} className="border-t">
+                        <td className="p-2 text-slate-600">{f.label_ar}</td>
+                        <td className="p-2 font-medium break-words">{f.value || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-slate-500 text-sm">لا توجد بيانات محفوظة — اضغط «إعادة توليد» لتحديث العقد</p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => downloadFile(`/contracts/${viewing.id}/download`, `${viewing.contract_number}.docx`)} className="btn-secondary">تحميل DOCX</button>
+              <button onClick={() => openPrintPage(`/contracts/${viewing.id}/print`)} className="btn-secondary">طباعة</button>
+              <button onClick={() => api(`/contracts/${viewing.id}/regenerate`, { method: 'POST' }).then(() => viewContract(viewing.id))} className="btn-primary">إعادة توليد</button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal open={!!editing} title="تعديل العقد" onClose={() => setEditing(null)}>
