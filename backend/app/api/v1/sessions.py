@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Customer, CustomerSession, SessionStatus
@@ -71,6 +71,45 @@ def list_active_sessions(db: DbSession, user: CurrentUser):
         data["remaining_time"] = hours["remaining_time"]
         items.append(data)
     return {"items": items, "count": len(items)}
+
+
+@router.get("/lookup")
+def lookup_customer_session(db: DbSession, user: CurrentUser, q: str = Query(..., min_length=2)):
+    """Quick reception lookup: is the customer here and how long."""
+    term = f"%{q.strip()}%"
+    customers = db.scalars(
+        select(Customer).where(
+            Customer.deleted_at.is_(None),
+            or_(
+                Customer.full_name.ilike(term),
+                Customer.phone.ilike(term),
+                Customer.customer_code.ilike(term),
+            ),
+        ).order_by(Customer.full_name).limit(8)
+    ).all()
+    items = []
+    for customer in customers:
+        hours = get_hours_summary(db, customer.id)
+        active = get_active_session(db, customer.id)
+        entry = {
+            "customer_id": str(customer.id),
+            "customer_name": customer.full_name,
+            "customer_phone": customer.phone,
+            "customer_code": customer.customer_code,
+            "is_checked_in": active is not None,
+            "remaining_hours": hours["remaining_hours"],
+            "remaining_time": hours["remaining_time"],
+            "session": None,
+        }
+        if active:
+            session_data = session_to_dict(active, customer, include_live=True)
+            entry["session"] = session_data
+            entry["check_in_at"] = session_data.get("check_in_at")
+            entry["elapsed_seconds"] = session_data.get("elapsed_seconds", 0)
+            entry["elapsed_time"] = session_data.get("elapsed_time")
+            entry["estimated_hours"] = session_data.get("estimated_hours")
+        items.append(entry)
+    return {"items": items, "query": q.strip()}
 
 
 @router.get("/summary/{customer_id}")

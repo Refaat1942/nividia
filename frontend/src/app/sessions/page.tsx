@@ -21,6 +21,9 @@ export default function SessionsPage() {
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lookupQuery, setLookupQuery] = useState('');
+  const [lookupResults, setLookupResults] = useState<any[]>([]);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   const load = useCallback(() => {
@@ -36,6 +39,22 @@ export default function SessionsPage() {
     const refresh = setInterval(load, 30000);
     return () => { clearInterval(timer); clearInterval(refresh); };
   }, [load]);
+
+  useEffect(() => {
+    const q = lookupQuery.trim();
+    if (q.length < 2) {
+      setLookupResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      setLookupLoading(true);
+      api<any>(`/sessions/lookup?q=${encodeURIComponent(q)}`)
+        .then((d) => setLookupResults(d.items || []))
+        .catch(() => setLookupResults([]))
+        .finally(() => setLookupLoading(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [lookupQuery]);
 
   const filtered = customers.filter((c) => {
     const q = search.trim();
@@ -89,6 +108,70 @@ export default function SessionsPage() {
         <p className="text-slate-500 mt-1">تسجيل حضور وانصراف العملاء وخصم الساعات من رصيد العقد</p>
       </div>
 
+      <div className="card mb-6 border-2 border-primary/20 bg-gradient-to-l from-blue-50 to-white">
+        <h2 className="font-bold text-lg mb-1">استعلام سريع — السكرتارية</h2>
+        <p className="text-sm text-slate-600 mb-4">العميل يسأل «قعدت قد إيه؟» — ابحث بالاسم أو التليفون أو الكود وشوف المدة فوراً</p>
+        <input
+          className="input text-lg"
+          placeholder="ابحث: اسم العميل، رقم التليفون، أو الكود..."
+          value={lookupQuery}
+          onChange={(e) => setLookupQuery(e.target.value)}
+          autoFocus
+        />
+        {lookupLoading && <p className="text-sm text-slate-500 mt-3">جاري البحث...</p>}
+        {!lookupLoading && lookupQuery.trim().length >= 2 && lookupResults.length === 0 && (
+          <p className="text-sm text-slate-500 mt-3">لا توجد نتائج</p>
+        )}
+        {lookupResults.length > 0 && (
+          <div className="mt-4 space-y-3">
+            {lookupResults.map((r) => (
+              <div
+                key={r.customer_id}
+                className={`rounded-xl border p-4 ${r.is_checked_in ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="font-bold text-lg">{r.customer_name}</p>
+                    <p className="text-sm text-slate-600">{r.customer_phone} • {r.customer_code}</p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      الرصيد المتبقي: {r.remaining_time?.display_short || formatRemainingFromHours(r.remaining_hours ?? 0)}
+                    </p>
+                  </div>
+                  {r.is_checked_in ? (
+                    <div className="text-center min-w-[180px]">
+                      <p className="text-xs text-green-700 font-medium mb-1">حاضر منذ {r.check_in_at ? formatTime(r.check_in_at) : '—'}</p>
+                      <p className="text-4xl font-bold text-green-800 tabular-nums tracking-wide">
+                        {liveElapsed(r.check_in_at)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        تقدير الخصم عند الانصراف: {r.estimated_hours ?? '—'} ساعة
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-center min-w-[180px] px-4 py-3 bg-slate-100 rounded-lg">
+                      <p className="text-lg font-semibold text-slate-600">غير حاضر</p>
+                      <p className="text-xs text-slate-500 mt-1">غير مسجّل حضور حالياً</p>
+                    </div>
+                  )}
+                </div>
+                {r.is_checked_in && r.session?.id && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleCheckOut(r.session.id)}
+                      className="text-sm text-red-700 hover:underline"
+                      disabled={loading}
+                    >
+                      تسجيل انصراف الآن
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="card lg:col-span-1">
           <h2 className="font-semibold mb-4 text-green-700">تسجيل حضور</h2>
@@ -140,8 +223,9 @@ export default function SessionsPage() {
                   <div>
                     <p className="font-semibold">{s.customer_name}</p>
                     <p className="text-sm text-slate-500">{s.customer_phone} • {s.customer_code}</p>
+                    <p className="text-2xl font-bold text-blue-800 tabular-nums mt-1">{liveElapsed(s.check_in_at)}</p>
                     <p className="text-xs text-slate-400 mt-1">
-                      حضور: {formatTime(s.check_in_at)} • المدة: {liveElapsed(s.check_in_at)}
+                      حضور: {formatTime(s.check_in_at)}
                       {s.estimated_hours ? ` • تقدير الخصم: ${s.estimated_hours} س` : ''}
                     </p>
                     <p className="text-xs text-green-700 mt-1">
