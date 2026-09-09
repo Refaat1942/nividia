@@ -13,13 +13,27 @@ const emptyForm = {
 export default function PackagesPage() {
   const [packages, setPackages] = useState<any[]>([]);
   const [company, setCompany] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState(emptyForm);
 
-  function load() {
-    api<any>('/packages').then((d) => setPackages(d.items)).catch(console.error);
-    api<Record<string, string>>('/settings').then(setCompany).catch(console.error);
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const [pkgData, settingsData] = await Promise.all([
+        api<any>('/packages'),
+        api<Record<string, string>>('/settings'),
+      ]);
+      setPackages(pkgData.items || []);
+      setCompany(settingsData || {});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'فشل تحميل الباقات');
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -72,10 +86,12 @@ export default function PackagesPage() {
         <button onClick={() => { setShowForm(true); setForm(emptyForm); }} className="btn-primary">+ باقة جديدة</button>
       </div>
 
+      {error && <div className="card mb-4 bg-red-50 text-red-700 text-sm">{error}</div>}
+
       <div className="card mb-6 bg-gradient-to-l from-blue-50 to-white border-blue-100">
         <h2 className="font-bold text-blue-900 mb-2">ما الذي تشمله الباقة؟</h2>
         <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">
-          {company.services_description || 'جاري التحميل...'}
+          {loading ? 'جاري التحميل...' : (company.services_description || 'لم يتم تحميل وصف الخدمات بعد. أعد تشغيل الـ backend أو نفّذ تهيئة البيانات.')}
         </div>
         {company.multi_year_discount_percent && (
           <p className="mt-3 text-sm font-medium text-amber-700">
@@ -123,6 +139,13 @@ export default function PackagesPage() {
           <div className="col-span-2"><button type="submit" className="btn-primary">حفظ</button></div>
         </form>
       </Modal>
+
+      {!loading && annualPackages.length === 0 && !error && (
+        <div className="card mb-4 text-center py-10 text-slate-500">
+          لا توجد باقات مسجلة. شغّل على السيرفر:
+          <code className="block mt-2 text-xs bg-slate-100 p-2 rounded">docker compose exec backend python -c &quot;from app.scripts.seed import run_seed; run_seed()&quot;</code>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {annualPackages.map((p) => (

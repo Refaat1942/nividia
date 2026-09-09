@@ -211,3 +211,8 @@ def _seed_demo(db) -> None:
     db.add(room)
     office = Office(office_number="O201", name="مكتب 201", floor="2", capacity=4, monthly_price=Decimal("8000"), status="available")
     db.add(office)
+
+
+if __name__ == "__main__":
+    run_seed()
+    print("Seed completed.")
