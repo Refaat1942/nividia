@@ -6,8 +6,17 @@ import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
-const emptyUserForm = {
-  username: '', full_name: '', email: '', password: '', role_ids: [] as string[], is_active: true,
+type UserForm = {
+  username: string;
+  full_name: string;
+  email: string;
+  password: string;
+  role_ids: string[];
+  is_active: boolean;
+};
+
+const emptyUserForm: UserForm = {
+  username: '', full_name: '', email: '', password: '', role_ids: [], is_active: true,
 };
 
 export default function UsersPage() {
@@ -18,7 +27,7 @@ export default function UsersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editingRole, setEditingRole] = useState<any>(null);
-  const [userForm, setUserForm] = useState(emptyUserForm);
+  const [userForm, setUserForm] = useState<UserForm>(emptyUserForm);
   const [rolePerms, setRolePerms] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'users' | 'roles'>('users');
