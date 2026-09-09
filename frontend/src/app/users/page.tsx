@@ -40,7 +40,7 @@ export default function UsersPage() {
 
   useEffect(() => { load(); }, []);
 
-  if (!user?.is_superuser && !hasPermission('users.manage')) {
+  if (!hasPermission('users.manage')) {
     return (
       <Layout>
         <div className="card text-center py-12">

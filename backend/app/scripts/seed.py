@@ -159,9 +159,8 @@ def run_seed() -> None:
 
         admin_username = settings.ADMIN_USERNAME.strip().lower()
         admin = db.scalar(select(User).where(func.lower(User.username) == admin_username))
-        if admin:
-            admin.is_superuser = True
-            admin.is_active = True
+        if not admin:
+            admin = db.scalar(select(User).where(User.is_superuser.is_(True), User.deleted_at.is_(None)))
         if not admin:
             password = settings.ADMIN_PASSWORD or "ChangeMeNow123!"
             admin = User(
@@ -175,7 +174,14 @@ def run_seed() -> None:
             )
             db.add(admin)
             db.flush()
-            super_role = role_map["super_admin"]
+        else:
+            admin.is_superuser = True
+            admin.is_active = True
+
+        super_role = role_map["super_admin"]
+        if not db.scalar(
+            select(UserRole).where(UserRole.user_id == admin.id, UserRole.role_id == super_role.id)
+        ):
             db.add(UserRole(user_id=admin.id, role_id=super_role.id))
 
         seed_nividia_catalog(db)

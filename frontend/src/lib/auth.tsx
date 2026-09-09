@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasPermission = useCallback(
     (code: string | string[]) => {
       if (!user) return false;
-      if (user.is_superuser) return true;
+      if (user.is_superuser || user.roles.includes('super_admin')) return true;
       const codes = Array.isArray(code) ? code : [code];
       return codes.some((c) => user.permissions.includes(c));
     },
