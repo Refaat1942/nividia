@@ -12,7 +12,7 @@ set -e
 
 INSTALL_DIR="/opt/fratelanza-office"
 DOMAIN="nividia.fratelanza.com"
-REPO_URL="${REPO_URL:-https://github.com/Refaat1942/Nividia.git}"
+REPO_URL="${REPO_URL:-https://github.com/Refaat1942/nividia.git}"
 FRONTEND_PORT_PREFERRED=16360
 BACKEND_PORT_PREFERRED=16361
 
