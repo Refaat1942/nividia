@@ -5,7 +5,13 @@ set -e
 /docker-entrypoint.sh postgres &
 child=$!
 
+i=0
 until pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB:-postgres}" >/dev/null 2>&1; do
+  i=$((i + 1))
+  if [ "$i" -ge 90 ]; then
+    echo "postgres-entrypoint: timed out waiting for postgres" >&2
+    exit 1
+  fi
   sleep 1
 done
 

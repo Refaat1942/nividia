@@ -19,6 +19,7 @@ save_secrets "${SECRETS_FILE}"
 write_deploy_env "${DEPLOY_DIR}"
 
 chmod +x postgres-entrypoint.sh backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
+sed -i 's/\r$//' postgres-entrypoint.sh backup-db.sh restore-db.sh hostinger/*.sh 2>/dev/null || true
 
 echo "Recreating postgres (password sync on startup)..."
 docker compose -f docker-compose.yml up -d --force-recreate postgres
