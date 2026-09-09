@@ -1,0 +1,103 @@
+name: fratelanza-office
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fratelanza-office-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-office}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-fratelanza_office}
+    volumes:
+      - fratelanza_office_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-office} -d ${POSTGRES_DB:-fratelanza_office}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fratelanza_office_net
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: fratelanza-office-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-office}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fratelanza_office}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@fratelanza.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-مدير النظام}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:16360}
+      UPLOAD_DIR: /app/uploads
+      BACKUP_DIR: /app/backups
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      ENVIRONMENT: production
+    ports:
+      - "${BACKEND_PORT:-127.0.0.1:16361}:8000"
+    volumes:
+      - fratelanza_office_uploads:/app/uploads
+      - fratelanza_office_backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fratelanza_office_net
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:16361}
+    container_name: fratelanza-office-frontend
+    restart: unless-stopped
+    environment:
+      INTERNAL_API_URL: http://backend:8000
+      PORT: 3000
+    ports:
+      - "${FRONTEND_PORT:-127.0.0.1:16360}:3000"
+    depends_on:
+      - backend
+    networks:
+      - fratelanza_office_net
+
+  backup:
+    image: postgres:16-alpine
+    container_name: fratelanza-office-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-office}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-fratelanza_office}
+    volumes:
+      - fratelanza_office_backups:/backups
+      - ./backup-db.sh:/backup-db.sh:ro
+    entrypoint: /bin/sh
+    command: >
+      -c "while true; do
+            sh /backup-db.sh >> /backups/backup.log 2>&1 || true;
+            sleep 86400;
+          done"
+    networks:
+      - fratelanza_office_net
+
+volumes:
+  fratelanza_office_postgres_data:
+    name: fratelanza_office_postgres_data
+  fratelanza_office_uploads:
+    name: fratelanza_office_uploads
+  fratelanza_office_backups:
+    name: fratelanza_office_backups
+
+networks:
+  fratelanza_office_net:
+    name: fratelanza_office_net
+    driver: bridge

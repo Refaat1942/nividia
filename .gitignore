@@ -1,0 +1,17 @@
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.env
+.env.local
+.env.production
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+uploads/
+backups/
+*.log
+.DS_Store
+Thumbs.db
