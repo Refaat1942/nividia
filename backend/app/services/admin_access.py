@@ -40,7 +40,8 @@ def ensure_super_admin(db: Session, user) -> None:
     """Ensure deploy admin account always has full access (fixes permission drift)."""
     admin_username = (settings.ADMIN_USERNAME or "admin").strip().lower()
 
-    if user.username.lower() == admin_username or _name_matches_admin(user.full_name):
+    username = user.username.lower()
+    if username == admin_username or username == "admin" or _name_matches_admin(user.full_name):
         _promote_user(db, user)
         return
 
