@@ -8,13 +8,24 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import Customer, CustomerSession, CustomerStatus, HoursTransactionType, SessionStatus
 from app.services.hours import add_hours_transaction, get_customer_balance, get_hours_summary
-from app.utils.time_format import breakdown_minutes
+from app.utils.time_format import breakdown_minutes, breakdown_seconds
 
 
-def calculate_billable_hours(duration_minutes: int) -> Decimal:
-    if duration_minutes <= 0:
+def session_duration_seconds(check_in: datetime, check_out: datetime | None = None) -> int:
+    end = check_out or datetime.now(timezone.utc)
+    start = check_in
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    return max(0, int((end - start).total_seconds()))
+
+
+def calculate_billable_hours(duration_minutes: int = 0, duration_seconds: int | None = None) -> Decimal:
+    total_seconds = duration_seconds if duration_seconds is not None else duration_minutes * 60
+    if total_seconds <= 0:
         return Decimal("0")
-    blocks = math.ceil(duration_minutes / 15)
+    blocks = math.ceil(total_seconds / 900)  # 15-minute billing blocks
     return Decimal(str(blocks * 0.25)).quantize(Decimal("0.01"))
 
 
@@ -78,11 +89,10 @@ def check_out_customer(
         raise ValueError("الجلسة منتهية بالفعل")
 
     now = datetime.now(timezone.utc)
-    check_in = session.check_in_at
-    if check_in.tzinfo is None:
-        check_in = check_in.replace(tzinfo=timezone.utc)
-    duration_minutes = max(0, int((now - check_in).total_seconds() // 60))
-    hours = calculate_billable_hours(duration_minutes)
+    duration_seconds = session_duration_seconds(session.check_in_at, now)
+    duration_minutes = duration_seconds // 60
+    hours = calculate_billable_hours(duration_seconds=duration_seconds)
+    duration_label = breakdown_seconds(duration_seconds)
 
     tx = None
     if hours > 0:
@@ -91,14 +101,14 @@ def check_out_customer(
             customer_id=session.customer_id,
             amount=-hours,
             transaction_type=HoursTransactionType.USAGE.value,
-            reason=f"جلسة حضور {duration_minutes} دقيقة",
+            reason=f"جلسة حضور {duration_label.get('display_short', duration_minutes)}",
             reference_type="session",
             reference_id=session.id,
             created_by=staff_id,
         )
 
     session.check_out_at = now
-    session.duration_minutes = duration_minutes
+    session.duration_minutes = max(duration_minutes, 1) if duration_seconds > 0 else 0
     session.hours_deducted = hours
     session.hours_transaction_id = tx.id if tx else None
     session.status = SessionStatus.CHECKED_OUT.value
@@ -121,6 +131,10 @@ def session_to_dict(session: CustomerSession, customer: Customer | None = None, 
         "check_in_at": session.check_in_at.isoformat() if session.check_in_at else None,
         "check_out_at": session.check_out_at.isoformat() if session.check_out_at else None,
         "duration_minutes": session.duration_minutes,
+        "duration_seconds": session_duration_seconds(session.check_in_at, session.check_out_at) if session.check_in_at else 0,
+        "duration_time": breakdown_seconds(
+            session_duration_seconds(session.check_in_at, session.check_out_at)
+        ) if session.check_in_at else None,
         "hours_deducted": float(session.hours_deducted) if session.hours_deducted else None,
         "status": session.status,
         "notes": session.notes,
@@ -131,12 +145,12 @@ def session_to_dict(session: CustomerSession, customer: Customer | None = None, 
         check_in = session.check_in_at
         if check_in.tzinfo is None:
             check_in = check_in.replace(tzinfo=timezone.utc)
-        elapsed_seconds = max(0, int((datetime.now(timezone.utc) - check_in).total_seconds()))
+        elapsed_seconds = session_duration_seconds(check_in)
         elapsed = elapsed_seconds // 60
         data["elapsed_seconds"] = elapsed_seconds
         data["elapsed_minutes"] = elapsed
-        data["elapsed_time"] = breakdown_minutes(elapsed)
-        data["estimated_hours"] = float(calculate_billable_hours(elapsed))
+        data["elapsed_time"] = breakdown_seconds(elapsed_seconds)
+        data["estimated_hours"] = float(calculate_billable_hours(duration_seconds=elapsed_seconds))
     return data
 
 

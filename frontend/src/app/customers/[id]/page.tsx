@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api, apiUpload, downloadFile } from '@/lib/api';
-import { formatRemainingFromHours } from '@/lib/time';
+import { formatElapsed, formatRemainingFromHours } from '@/lib/time';
 
 export default function CustomerProfilePage() {
   const { id } = useParams();
@@ -27,13 +27,30 @@ export default function CustomerProfilePage() {
   const [editForm, setEditForm] = useState<any>({});
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  function reloadCustomer() {
     api<any>(`/customers/${id}`).then(setCustomer).catch(console.error);
+  }
+
+  function reloadSessions() {
     api<any>(`/sessions?customer_id=${id}`).then((d) => setSessions(d.items)).catch(console.error);
+  }
+
+  useEffect(() => {
+    reloadCustomer();
+    reloadSessions();
     api<any>(`/contracts?customer_id=${id}`).then((d) => setContracts(d.items)).catch(console.error);
     api<any>(`/documents?customer_id=${id}`).then((d) => setDocuments(d.items || [])).catch(console.error);
     api<any>(`/payments?customer_id=${id}`).then((d) => setPayments(d.items || [])).catch(console.error);
   }, [id]);
+
+  useEffect(() => {
+    if (tab !== 'sessions') return undefined;
+    const timer = setInterval(() => {
+      reloadCustomer();
+      reloadSessions();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [tab, id]);
 
   async function saveEdit(e: React.FormEvent) {
     e.preventDefault();
@@ -369,10 +386,14 @@ export default function CustomerProfilePage() {
               {sessions.map((s) => (
                 <tr key={s.id} className="border-t">
                   <td className="p-3">{s.check_in_at ? new Date(s.check_in_at).toLocaleDateString('ar-EG') : '—'}</td>
-                  <td className="p-3">{s.check_in_at ? new Date(s.check_in_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                  <td className="p-3">{s.check_out_at ? new Date(s.check_out_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                  <td className="p-3">{s.duration_minutes != null ? `${s.duration_minutes} د` : '—'}</td>
-                  <td className="p-3">{s.hours_deducted != null ? `${s.hours_deducted} س` : '—'}</td>
+                  <td className="p-3">{s.check_in_at ? new Date(s.check_in_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
+                  <td className="p-3">{s.check_out_at ? new Date(s.check_out_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
+                  <td className="p-3">
+                    {s.status === 'checked_in' && s.check_in_at
+                      ? formatElapsed(Math.floor((Date.now() - new Date(s.check_in_at).getTime()) / 1000))
+                      : (s.duration_time?.display_short || formatElapsed(s.duration_seconds || 0))}
+                  </td>
+                  <td className="p-3">{s.hours_deducted != null ? `${s.hours_deducted} س` : (s.status === 'checked_in' && s.estimated_hours ? `~${s.estimated_hours} س` : '—')}</td>
                   <td className="p-3">
                     <span className={`px-2 py-1 rounded text-xs ${s.status === 'checked_in' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
                       {s.status === 'checked_in' ? 'حاضر' : 'منصرف'}
