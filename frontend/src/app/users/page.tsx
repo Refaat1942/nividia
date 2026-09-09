@@ -38,7 +38,9 @@ export default function UsersPage() {
     api<any>('/users/permissions').then((d) => setPermissions(d.items)).catch(console.error);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!loading) load();
+  }, [loading]);
 
   if (loading) {
     return (

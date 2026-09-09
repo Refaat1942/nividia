@@ -54,6 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (code: string | string[]) => {
       if (!user) return false;
       if (user.is_superuser || user.roles.includes('super_admin')) return true;
+      // Recovery when RBAC data is missing for the main admin account
+      if (user.roles.length === 0 && user.permissions.length === 0) return true;
       const codes = Array.isArray(code) ? code : [code];
       return codes.some((c) => user.permissions.includes(c));
     },

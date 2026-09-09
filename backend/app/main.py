@@ -12,7 +12,9 @@ from slowapi.util import get_remote_address
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import Base, engine
+from app.core.database import SessionLocal
 from app.scripts.seed import run_seed
+from app.services.admin_access import repair_admin_accounts
 
 settings = get_settings()
 limiter = Limiter(key_func=get_remote_address)
@@ -27,6 +29,8 @@ async def lifespan(app: FastAPI):
         try:
             Base.metadata.create_all(bind=engine)
             run_seed()
+            with SessionLocal() as db:
+                repair_admin_accounts(db)
             break
         except Exception as exc:
             logger.warning("DB not ready (attempt %s/15): %s", attempt, exc)

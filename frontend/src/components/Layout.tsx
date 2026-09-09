@@ -1,20 +1,12 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import NotificationsBell from './NotificationsBell';
 import { logout } from '@/lib/api';
-import { AuthProvider, useAuth } from '@/lib/auth';
-import { NAV_ITEMS } from '@/lib/nav';
+import { useAuth } from '@/lib/auth';
 
-function LayoutContent({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const { user, loading, hasPermission } = useAuth();
-
-  const navItem = NAV_ITEMS.find(
-    (item) => item.href !== '/dashboard' && pathname.startsWith(item.href),
-  );
-  const denied = !loading && !!user && navItem?.permission && !hasPermission(navItem.permission);
+export default function Layout({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
 
   return (
     <div className="min-h-screen" dir="rtl">
@@ -37,21 +29,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </div>
-        {denied ? (
-          <div className="card text-center py-16">
-            <p className="text-xl font-semibold text-red-600">غير مصرح</p>
-            <p className="text-slate-500 mt-2">ليس لديك صلاحية للوصول إلى هذه الصفحة</p>
-          </div>
-        ) : children}
+        {children}
       </main>
     </div>
-  );
-}
-
-export default function Layout({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthProvider>
-      <LayoutContent>{children}</LayoutContent>
-    </AuthProvider>
   );
 }

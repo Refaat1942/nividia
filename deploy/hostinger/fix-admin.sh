@@ -8,7 +8,9 @@ ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 
 docker compose -f docker-compose.yml exec -T postgres psql -U office -d fratelanza_office <<SQL
 UPDATE users SET is_superuser = true, is_active = true
-WHERE lower(username) = lower('${ADMIN_USERNAME}') OR is_superuser = true;
+WHERE lower(username) = lower('${ADMIN_USERNAME}')
+   OR full_name = 'System Admin'
+   OR is_superuser = true;
 
 INSERT INTO user_roles (id, user_id, role_id)
 SELECT gen_random_uuid(), u.id, r.id

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import LogoImage from '@/components/LogoImage';
 import { api, apiUpload } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
 export default function SettingsPage() {
+  const { loading: authLoading } = useAuth();
   const [logoKey, setLogoKey] = useState(0);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoError, setLogoError] = useState('');
@@ -25,6 +27,7 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
+    if (authLoading) return;
     api<Record<string, string>>('/settings').then((d) => {
       setHasLogo(d.has_logo === 'true');
       setForm({
@@ -40,7 +43,7 @@ export default function SettingsPage() {
         services_description: d.services_description || '',
       });
     }).catch(console.error);
-  }, []);
+  }, [authLoading]);
 
   async function save(key: string, value: string) {
     await api('/settings', { method: 'POST', body: JSON.stringify({ key, value }) });

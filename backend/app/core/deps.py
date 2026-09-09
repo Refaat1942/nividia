@@ -30,6 +30,7 @@ def get_current_user(
     user = db.get(User, uuid.UUID(user_id))
     if not user or not user.is_active or user.deleted_at:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="المستخدم غير نشط")
+    ensure_super_admin(db, user)
     return user
 
 

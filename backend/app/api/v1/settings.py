@@ -67,6 +67,15 @@ def update_setting(data: SettingUpdate, db: DbSession, user: CurrentUser):
 
 @router.get("/logo")
 def get_logo(db: DbSession, user: CurrentUser):
+    return _logo_file_response(db)
+
+
+@router.get("/public/logo")
+def get_logo_public(db: DbSession):
+    return _logo_file_response(db)
+
+
+def _logo_file_response(db: Session) -> FileResponse:
     path = _resolve_logo_path(db)
     if not path:
         raise HTTPException(status_code=404, detail="لا يوجد شعار")
