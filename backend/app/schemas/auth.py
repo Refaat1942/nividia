@@ -1,10 +1,10 @@
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    username: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=1)
 
 
@@ -20,7 +20,8 @@ class RefreshRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: UUID
-    email: str
+    username: str
+    email: str | None = None
     full_name: str
     is_active: bool
     is_superuser: bool

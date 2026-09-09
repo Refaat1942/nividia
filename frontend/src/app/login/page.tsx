@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { login } from '@/lib/api';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,7 +14,7 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      await login(email, password);
+      await login(username, password);
       window.location.href = '/dashboard';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'فشل تسجيل الدخول');
@@ -32,12 +32,26 @@ export default function LoginPage() {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">البريد الإلكتروني</label>
-            <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <label className="block text-sm font-medium text-slate-700 mb-1">اسم المستخدم</label>
+            <input
+              type="text"
+              className="input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">كلمة المرور</label>
-            <input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input
+              type="password"
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
           </div>
           {error && <p className="text-red-600 text-sm">{error}</p>}
           <button type="submit" disabled={loading} className="btn-primary w-full py-3">

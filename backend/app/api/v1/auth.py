@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip, get_user_permissions
 from app.core.security import (
@@ -20,7 +20,10 @@ router = APIRouter(prefix="/auth", tags=["المصادقة"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(data: LoginRequest, request: Request, db: DbSession):
-    user = db.scalar(select(User).where(User.email == data.email, User.deleted_at.is_(None)))
+    username = data.username.strip().lower()
+    user = db.scalar(
+        select(User).where(func.lower(User.username) == username, User.deleted_at.is_(None))
+    )
     if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="بيانات الدخول غير صحيحة")
     if not user.is_active:
@@ -55,6 +58,7 @@ def me(db: DbSession, user: CurrentUser):
     ).all()
     return UserResponse(
         id=user.id,
+        username=user.username,
         email=user.email,
         full_name=user.full_name,
         is_active=user.is_active,

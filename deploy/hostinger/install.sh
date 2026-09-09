@@ -9,45 +9,43 @@ echo "=== Fratelanza Office Manager ==="
 echo "Domain: https://${DOMAIN}"
 
 if [ -d "${INSTALL_DIR}/.git" ]; then
-  cd "${INSTALL_DIR}" && git pull origin main
+  cd "${INSTALL_DIR}" && git fetch origin main && git reset --hard origin/main
 else
   rm -rf "${INSTALL_DIR}"
   git clone "${REPO_URL}" "${INSTALL_DIR}"
 fi
 
-find "${INSTALL_DIR}" -type f -name "*.sh" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
-find "${INSTALL_DIR}" -type f -name "*.yml" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
-
 cd "${INSTALL_DIR}/deploy"
+rm -f .env .env.local
 
 SECRET=$(openssl rand -hex 32)
 DBPASS=$(openssl rand -hex 16)
+ADMIN_USER="${ADMIN_USERNAME:-admin}"
 if [ -n "${ADMIN_PASSWORD}" ]; then
   ADMIN_PASS="${ADMIN_PASSWORD}"
 else
   ADMIN_PASS="Office$(openssl rand -hex 4)"
 fi
 
-{
-  echo "POSTGRES_USER=office"
-  echo "POSTGRES_PASSWORD=${DBPASS}"
-  echo "POSTGRES_DB=fratelanza_office"
-  echo "SECRET_KEY=${SECRET}"
-  echo "ADMIN_EMAIL=admin@fratelanza.local"
-  echo "ADMIN_PASSWORD=${ADMIN_PASS}"
-  echo "ADMIN_NAME=System Admin"
-  echo "FRONTEND_PORT=127.0.0.1:16360"
-  echo "BACKEND_PORT=127.0.0.1:16361"
-  echo "CORS_ORIGINS=https://${DOMAIN},http://${DOMAIN}"
-  echo "NEXT_PUBLIC_API_URL=https://${DOMAIN}"
-  echo "SEED_DEMO_DATA=false"
-} > .env
+export POSTGRES_USER=office
+export POSTGRES_PASSWORD="${DBPASS}"
+export POSTGRES_DB=fratelanza_office
+export SECRET_KEY="${SECRET}"
+export ADMIN_USERNAME="${ADMIN_USER}"
+export ADMIN_PASSWORD="${ADMIN_PASS}"
+export ADMIN_NAME="System Admin"
+export ADMIN_EMAIL=""
+export FRONTEND_PORT="127.0.0.1:16360"
+export BACKEND_PORT="127.0.0.1:16361"
+export CORS_ORIGINS="https://${DOMAIN},http://${DOMAIN}"
+export NEXT_PUBLIC_API_URL="https://${DOMAIN}"
+export SEED_DEMO_DATA=false
 
 chmod +x backup-db.sh restore-db.sh 2>/dev/null || true
 
-docker compose --env-file .env -f docker-compose.yml down 2>/dev/null || true
-docker compose --env-file .env -f docker-compose.yml build
-docker compose --env-file .env -f docker-compose.yml up -d
+docker compose -f docker-compose.yml down 2>/dev/null || true
+docker compose -f docker-compose.yml build --no-cache
+docker compose -f docker-compose.yml up -d
 
 echo "Waiting for services..."
 for i in $(seq 1 90); do
@@ -104,7 +102,7 @@ echo ""
 echo "============================================"
 echo "  DEPLOYMENT COMPLETE"
 echo "  URL:      https://${DOMAIN}/login"
-echo "  Email:    admin@fratelanza.local"
+echo "  Username: ${ADMIN_USER}"
 echo "  Password: ${ADMIN_PASS}"
 echo "============================================"
 docker compose -f docker-compose.yml ps

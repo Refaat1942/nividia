@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -99,9 +99,25 @@ DEFAULT_SETTINGS = {
 }
 
 
+def _ensure_user_schema(db) -> None:
+    db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(50)"))
+    db.execute(text(
+        "UPDATE users SET username = LOWER(SPLIT_PART(email, '@', 1)) "
+        "WHERE username IS NULL AND email IS NOT NULL"
+    ))
+    db.execute(text("UPDATE users SET username = 'admin' WHERE username IS NULL"))
+    try:
+        db.execute(text("ALTER TABLE users ALTER COLUMN email DROP NOT NULL"))
+    except Exception:
+        db.rollback()
+        db.begin()
+    db.commit()
+
+
 def run_seed() -> None:
     db = SessionLocal()
     try:
+        _ensure_user_schema(db)
         for code, name_ar, module in PERMISSIONS:
             if not db.scalar(select(Permission).where(Permission.code == code)):
                 db.add(Permission(code=code, name_ar=name_ar, module=module))
@@ -130,11 +146,13 @@ def run_seed() -> None:
             if not db.scalar(select(Setting).where(Setting.key == key)):
                 db.add(Setting(key=key, value=value))
 
-        admin = db.scalar(select(User).where(User.email == settings.ADMIN_EMAIL))
+        admin_username = settings.ADMIN_USERNAME.strip().lower()
+        admin = db.scalar(select(User).where(func.lower(User.username) == admin_username))
         if not admin:
             password = settings.ADMIN_PASSWORD or "ChangeMeNow123!"
             admin = User(
-                email=settings.ADMIN_EMAIL,
+                username=admin_username,
+                email=settings.ADMIN_EMAIL or None,
                 full_name=settings.ADMIN_NAME,
                 hashed_password=hash_password(password),
                 is_active=True,

@@ -29,10 +29,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return res as unknown as T;
 }
 
-export async function login(email: string, password: string) {
+export async function login(username: string, password: string) {
   const data = await api<{ access_token: string; refresh_token: string }>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
   localStorage.setItem('access_token', data.access_token);
   localStorage.setItem('refresh_token', data.refresh_token);
@@ -40,7 +40,7 @@ export async function login(email: string, password: string) {
 }
 
 export async function getMe() {
-  return api<{ email: string; full_name: string; permissions: string[]; roles: string[] }>('/auth/me');
+  return api<{ username: string; full_name: string; permissions: string[]; roles: string[] }>('/auth/me');
 }
 
 export function logout() {

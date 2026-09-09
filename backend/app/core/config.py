@@ -19,9 +19,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"
 
-    ADMIN_EMAIL: str = "admin@fratelanza.local"
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_EMAIL: str = ""
     ADMIN_PASSWORD: str = ""
-    ADMIN_NAME: str = "مدير النظام"
+    ADMIN_NAME: str = "System Admin"
 
     UPLOAD_DIR: str = "/app/uploads"
     MAX_UPLOAD_SIZE_MB: int = 20

@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.core.security import hash_password
@@ -13,7 +13,8 @@ router = APIRouter(prefix="/users", tags=["المستخدمون"])
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str = Field(min_length=2, max_length=50)
+    email: EmailStr | None = None
     full_name: str
     password: str = Field(min_length=8)
     role_ids: list[uuid.UUID] = []
@@ -31,15 +32,21 @@ def list_users(db: DbSession, user: CurrentUser):
     result = []
     for u in items:
         roles = db.scalars(select(Role.name).join(UserRole).where(UserRole.user_id == u.id)).all()
-        result.append({"id": str(u.id), "email": u.email, "full_name": u.full_name, "is_active": u.is_active, "roles": list(roles)})
+        result.append({"id": str(u.id), "username": u.username, "email": u.email, "full_name": u.full_name, "is_active": u.is_active, "roles": list(roles)})
     return {"items": result}
 
 
 @router.post("", status_code=201)
 def create_user(data: UserCreate, request: Request, db: DbSession, user: CurrentUser):
-    if db.scalar(select(User).where(User.email == data.email)):
-        raise HTTPException(400, "البريد مسجل مسبقًا")
-    new_user = User(email=data.email, full_name=data.full_name, hashed_password=hash_password(data.password))
+    username = data.username.strip().lower()
+    if db.scalar(select(User).where(func.lower(User.username) == username)):
+        raise HTTPException(400, "اسم المستخدم مسجل مسبقًا")
+    new_user = User(
+        username=username,
+        email=data.email,
+        full_name=data.full_name,
+        hashed_password=hash_password(data.password),
+    )
     db.add(new_user)
     db.flush()
     for rid in data.role_ids:
@@ -47,7 +54,7 @@ def create_user(data: UserCreate, request: Request, db: DbSession, user: Current
     log_audit(db, user_id=user.id, action="create", module="users", record_id=str(new_user.id),
               ip_address=get_client_ip(request))
     db.commit()
-    return {"id": str(new_user.id), "email": new_user.email}
+    return {"id": str(new_user.id), "username": new_user.username}
 
 
 @router.get("/roles")
