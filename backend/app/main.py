@@ -23,11 +23,18 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     os.makedirs(settings.BACKUP_DIR, exist_ok=True)
-    Base.metadata.create_all(bind=engine)
-    try:
-        run_seed()
-    except Exception as exc:
-        logger.exception("Seed failed (app will still start): %s", exc)
+    for attempt in range(1, 16):
+        try:
+            Base.metadata.create_all(bind=engine)
+            run_seed()
+            break
+        except Exception as exc:
+            logger.warning("DB not ready (attempt %s/15): %s", attempt, exc)
+            if attempt == 15:
+                logger.exception("Could not connect to database after 15 attempts")
+            else:
+                import time
+                time.sleep(2)
     yield
 
 
