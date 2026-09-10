@@ -47,6 +47,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+      setLoading(false);
+      return;
+    }
     refresh();
   }, [refresh]);
 

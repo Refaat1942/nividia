@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { login } from '@/lib/api';
 
 export default function LoginPage() {
@@ -8,6 +8,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setReady(true);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,6 +43,7 @@ export default function LoginPage() {
               className="input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              readOnly={!ready}
               autoComplete="username"
               required
             />
@@ -49,6 +55,7 @@ export default function LoginPage() {
               className="input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              readOnly={!ready}
               autoComplete="current-password"
               required
             />
