@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { getMe } from './api';
 
 export type AuthUser = {
+  id: string;
   username: string;
   full_name: string;
   permissions: string[];
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await getMe();
       setUser({
+        id: me.id,
         username: me.username,
         full_name: me.full_name,
         permissions: me.permissions || [],

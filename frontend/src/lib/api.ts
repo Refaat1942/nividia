@@ -52,7 +52,7 @@ export async function login(username: string, password: string) {
 }
 
 export async function getMe() {
-  return api<{ username: string; full_name: string; permissions: string[]; roles: string[]; is_superuser: boolean; must_change_password?: boolean }>('/auth/me');
+  return api<{ id: string; username: string; full_name: string; permissions: string[]; roles: string[]; is_superuser: boolean; must_change_password?: boolean }>('/auth/me');
 }
 
 export async function changePassword(currentPassword: string, newPassword: string) {
