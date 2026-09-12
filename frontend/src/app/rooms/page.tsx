@@ -59,9 +59,16 @@ export default function SpacesPage() {
   const [form, setForm] = useState(emptyForm);
 
   function load() {
-    Promise.all([api<any>('/offices'), api<any>('/rooms')])
+    api<any>('/rooms/sync-bookable-offices', { method: 'POST' }).catch(() => {}).finally(() => {
+    Promise.all([api<any>('/offices'), api<any>('/rooms?page_size=200')])
       .then(([officesRes, roomsRes]) => {
-        const officeItems: SpaceItem[] = (officesRes.items || []).map((o: any) => {
+        const rawRooms = roomsRes.items || [];
+        const syncedOfficeIds = new Set(
+          rawRooms.map((r: any) => r.equipment?.synced_from_office_id).filter(Boolean),
+        );
+        const officeItems: SpaceItem[] = (officesRes.items || [])
+          .filter((o: any) => !syncedOfficeIds.has(o.id))
+          .map((o: any) => {
           const spaceType = o.amenities?.space_type || 'admin_office';
           return {
             id: o.id,
@@ -78,7 +85,7 @@ export default function SpacesPage() {
             bookable: false,
           };
         });
-        const roomItems: SpaceItem[] = (roomsRes.items || []).map((r: any) => {
+        const roomItems: SpaceItem[] = rawRooms.map((r: any) => {
           const { spaceType, label } = readRoomType(r);
           return {
             id: r.id,
@@ -96,6 +103,7 @@ export default function SpacesPage() {
         setSpaces([...officeItems, ...roomItems]);
       })
       .catch(console.error);
+    });
   }
 
   useEffect(() => { load(); }, []);

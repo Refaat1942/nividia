@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Room
 from app.services.audit import log_audit
+from app.services.spaces import sync_bookable_offices_to_rooms
 
 router = APIRouter(prefix="/rooms", tags=["غرف الاجتماعات"])
 
@@ -31,8 +32,27 @@ class RoomResponse(RoomSchema):
     id: uuid.UUID
 
 
+@router.post("/sync-bookable-offices")
+def sync_bookable_offices(request: Request, db: DbSession, user: CurrentUser):
+    created = sync_bookable_offices_to_rooms(db)
+    if created:
+        log_audit(
+            db,
+            user_id=user.id,
+            action="sync",
+            module="rooms",
+            record_id="bookable-offices",
+            new_value={"created": created},
+            ip_address=get_client_ip(request),
+        )
+    db.commit()
+    return {"message": "تمت المزامنة", "created": created}
+
+
 @router.get("")
 def list_rooms(db: DbSession, user: CurrentUser, page: int = 1, page_size: int = 50, status: str | None = None):
+    sync_bookable_offices_to_rooms(db)
+    db.commit()
     q = select(Room).where(Room.deleted_at.is_(None))
     if status:
         q = q.where(Room.status == status)

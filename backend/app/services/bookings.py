@@ -5,6 +5,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Customer, Room, RoomBooking
+from app.services.spaces import sync_bookable_offices_to_rooms
 
 
 def _time_to_str(t: time) -> str:
@@ -85,6 +86,9 @@ def get_day_availability(
 ) -> dict:
     day_start = work_start or time(9, 0)
     day_end = work_end or time(18, 0)
+
+    sync_bookable_offices_to_rooms(db)
+    db.flush()
 
     rooms_q = select(Room).where(Room.deleted_at.is_(None), Room.status != "disabled")
     if room_id:

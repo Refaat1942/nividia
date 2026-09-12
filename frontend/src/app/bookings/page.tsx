@@ -39,10 +39,18 @@ export default function BookingsPage() {
       .catch(console.error);
   }, [viewDate]);
 
+  function loadRooms() {
+    api<any>('/rooms/sync-bookable-offices', { method: 'POST' })
+      .catch(() => {})
+      .finally(() => {
+        api<any>('/rooms?page_size=200').then((d) => setRooms(d.items || [])).catch(console.error);
+      });
+  }
+
   useEffect(() => {
     loadBookings();
     loadAvailability();
-    api<any>('/rooms').then((d) => setRooms(d.items)).catch(console.error);
+    loadRooms();
     api<any>('/customers').then((d) => setCustomers(d.items)).catch(console.error);
   }, [loadBookings, loadAvailability]);
 
