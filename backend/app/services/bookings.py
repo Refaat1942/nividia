@@ -121,6 +121,7 @@ def get_day_availability(
             booking_ranges.append((booking.start_time, booking.end_time))
 
         free_slots = _compute_free_slots(day_start, day_end, booking_ranges)
+        equipment = room.equipment or {}
         result_rooms.append({
             "room_id": str(room.id),
             "room_name": room.name,
@@ -128,6 +129,8 @@ def get_day_availability(
             "capacity": room.capacity,
             "hourly_price": float(room.hourly_price) if room.hourly_price else None,
             "status": room.status,
+            "space_type": equipment.get("space_type", "meeting_room"),
+            "space_type_label": equipment.get("space_type_label"),
             "bookings": booking_items,
             "free_slots": free_slots,
             "is_fully_booked": len(free_slots) == 0 and len(booking_items) > 0,

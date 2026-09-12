@@ -4,14 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
+import { BUILTIN_SPACE_TYPES, isBookableSpaceType, slugifySpaceType, spaceTypeLabel } from '@/lib/spaces';
 
-type SpaceType = 'admin_office' | 'manager_office' | 'meeting_room';
-type FilterType = 'all' | SpaceType;
+type FilterType = 'all' | string;
 
 type SpaceItem = {
   id: string;
   kind: 'office' | 'room';
-  space_type: SpaceType;
+  space_type: string;
+  space_type_label?: string;
   number: string;
   name: string;
   floor?: string;
@@ -20,23 +21,20 @@ type SpaceItem = {
   annual_price?: number;
   hourly_price?: number;
   status: string;
-};
-
-const SPACE_LABELS: Record<SpaceType, string> = {
-  admin_office: 'مكتب إداري',
-  manager_office: 'مكتب مدير',
-  meeting_room: 'قاعة اجتماعات',
+  bookable: boolean;
 };
 
 const FILTER_TABS: { key: FilterType; label: string }[] = [
   { key: 'all', label: 'كل المساحات' },
   { key: 'admin_office', label: 'مكاتب إدارية' },
-  { key: 'manager_office', label: 'مكاتب مدير' },
+  { key: 'manager_office', label: 'غرف مدير' },
   { key: 'meeting_room', label: 'قاعات اجتماعات' },
+  { key: 'custom', label: 'أنواع مخصصة' },
 ];
 
 const emptyForm = {
-  space_type: 'admin_office' as SpaceType,
+  space_type: 'meeting_room',
+  custom_type_label: '',
   number: '',
   name: '',
   floor: '',
@@ -46,6 +44,12 @@ const emptyForm = {
   hourly_price: '',
   status: 'available',
 };
+
+function readRoomType(room: any) {
+  const spaceType = room.equipment?.space_type || 'meeting_room';
+  const label = room.equipment?.space_type_label || null;
+  return { spaceType, label };
+}
 
 export default function SpacesPage() {
   const [spaces, setSpaces] = useState<SpaceItem[]>([]);
@@ -57,28 +61,38 @@ export default function SpacesPage() {
   function load() {
     Promise.all([api<any>('/offices'), api<any>('/rooms')])
       .then(([officesRes, roomsRes]) => {
-        const officeItems: SpaceItem[] = (officesRes.items || []).map((o: any) => ({
-          id: o.id,
-          kind: 'office',
-          space_type: (o.amenities?.space_type as SpaceType) || 'admin_office',
-          number: o.office_number,
-          name: o.name,
-          floor: o.floor,
-          capacity: o.capacity,
-          monthly_price: o.monthly_price,
-          annual_price: o.annual_price,
-          status: o.status,
-        }));
-        const roomItems: SpaceItem[] = (roomsRes.items || []).map((r: any) => ({
-          id: r.id,
-          kind: 'room',
-          space_type: 'meeting_room',
-          number: r.room_number,
-          name: r.name,
-          capacity: r.capacity,
-          hourly_price: r.hourly_price,
-          status: r.status,
-        }));
+        const officeItems: SpaceItem[] = (officesRes.items || []).map((o: any) => {
+          const spaceType = o.amenities?.space_type || 'admin_office';
+          return {
+            id: o.id,
+            kind: 'office',
+            space_type: spaceType,
+            space_type_label: o.amenities?.space_type_label || null,
+            number: o.office_number,
+            name: o.name,
+            floor: o.floor,
+            capacity: o.capacity,
+            monthly_price: o.monthly_price,
+            annual_price: o.annual_price,
+            status: o.status,
+            bookable: false,
+          };
+        });
+        const roomItems: SpaceItem[] = (roomsRes.items || []).map((r: any) => {
+          const { spaceType, label } = readRoomType(r);
+          return {
+            id: r.id,
+            kind: 'room',
+            space_type: spaceType,
+            space_type_label: label,
+            number: r.room_number,
+            name: r.name,
+            capacity: r.capacity,
+            hourly_price: r.hourly_price,
+            status: r.status,
+            bookable: true,
+          };
+        });
         setSpaces([...officeItems, ...roomItems]);
       })
       .catch(console.error);
@@ -86,25 +100,51 @@ export default function SpacesPage() {
 
   useEffect(() => { load(); }, []);
 
-  const visible = useMemo(
-    () => spaces.filter((s) => filter === 'all' || s.space_type === filter),
-    [spaces, filter],
-  );
+  const visible = useMemo(() => spaces.filter((s) => {
+    if (filter === 'all') return true;
+    if (filter === 'custom') return !BUILTIN_SPACE_TYPES[s.space_type];
+    return s.space_type === filter;
+  }), [spaces, filter]);
+
+  function resolvedType() {
+    if (form.space_type === 'custom') {
+      const label = form.custom_type_label.trim();
+      return {
+        space_type: slugifySpaceType(label),
+        space_type_label: label || 'نوع مخصص',
+      };
+    }
+    return {
+      space_type: form.space_type,
+      space_type_label: BUILTIN_SPACE_TYPES[form.space_type] || form.space_type,
+    };
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (form.space_type === 'meeting_room') {
+    const { space_type, space_type_label } = resolvedType();
+
+    if (form.space_type === 'custom' && !form.custom_type_label.trim()) {
+      alert('أدخل اسم النوع المخصص');
+      return;
+    }
+
+    if (isBookableSpaceType(space_type)) {
       const body = {
         room_number: form.number,
         name: form.name,
         capacity: parseInt(form.capacity) || null,
         hourly_price: parseFloat(form.hourly_price) || null,
         status: form.status,
+        equipment: { space_type, space_type_label },
       };
       if (editing?.kind === 'room') {
         await api(`/rooms/${editing.id}`, { method: 'PATCH', body: JSON.stringify(body) });
       } else {
         await api('/rooms', { method: 'POST', body: JSON.stringify(body) });
+        if (editing?.kind === 'office') {
+          await api(`/offices/${editing.id}`, { method: 'DELETE' });
+        }
       }
     } else {
       const body = {
@@ -115,12 +155,15 @@ export default function SpacesPage() {
         monthly_price: parseFloat(form.monthly_price) || null,
         annual_price: parseFloat(form.annual_price) || null,
         status: form.status,
-        amenities: { space_type: form.space_type },
+        amenities: { space_type, space_type_label },
       };
       if (editing?.kind === 'office') {
         await api(`/offices/${editing.id}`, { method: 'PATCH', body: JSON.stringify(body) });
       } else {
         await api('/offices', { method: 'POST', body: JSON.stringify(body) });
+        if (editing?.kind === 'room') {
+          await api(`/rooms/${editing.id}`, { method: 'DELETE' });
+        }
       }
     }
     setShowForm(false);
@@ -137,9 +180,11 @@ export default function SpacesPage() {
   }
 
   function openEdit(space: SpaceItem) {
+    const isCustom = !BUILTIN_SPACE_TYPES[space.space_type];
     setEditing(space);
     setForm({
-      space_type: space.space_type,
+      space_type: isCustom ? 'custom' : space.space_type,
+      custom_type_label: isCustom ? (space.space_type_label || space.space_type) : '',
       number: space.number,
       name: space.name,
       floor: space.floor || '',
@@ -149,6 +194,7 @@ export default function SpacesPage() {
       hourly_price: String(space.hourly_price || ''),
       status: space.status,
     });
+    setShowForm(true);
   }
 
   const statusColors: Record<string, string> = {
@@ -159,12 +205,14 @@ export default function SpacesPage() {
     disabled: 'bg-slate-100 text-slate-500',
   };
 
+  const bookableForm = form.space_type !== 'admin_office';
+
   return (
     <Layout>
       <div className="flex justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">الغرف والمساحات</h1>
-          <p className="text-slate-500 text-sm">مكاتب إدارية، مكاتب مدير، وقاعات اجتماعات في مكان واحد</p>
+          <p className="text-slate-500 text-sm">مكاتب إدارية، غرف مدير، وقاعات اجتماعات — الغرف القابلة للحجز تظهر في صفحة الحجوزات</p>
         </div>
         <button onClick={() => { setShowForm(true); setEditing(null); setForm(emptyForm); }} className="btn-primary">
           + مساحة جديدة
@@ -192,21 +240,36 @@ export default function SpacesPage() {
             <select
               className="input-select mt-1"
               value={form.space_type}
-              onChange={(e) => setForm({ ...form, space_type: e.target.value as SpaceType })}
-              disabled={!!editing}
+              onChange={(e) => setForm({ ...form, space_type: e.target.value })}
             >
-              <option value="admin_office">مكتب إداري</option>
-              <option value="manager_office">مكتب مدير</option>
-              <option value="meeting_room">قاعة اجتماعات</option>
+              <option value="meeting_room">قاعة اجتماعات (حجز بالساعة)</option>
+              <option value="manager_office">غرفة مدير (حجز بالساعة)</option>
+              <option value="admin_office">مكتب إداري (إيجار شهري/سنوي)</option>
+              <option value="custom">نوع مخصص (حجز بالساعة)</option>
             </select>
+            {form.space_type === 'custom' && (
+              <input
+                className="input mt-2"
+                placeholder="اسم النوع، مثال: قاعة تدريب"
+                value={form.custom_type_label}
+                onChange={(e) => setForm({ ...form, custom_type_label: e.target.value })}
+                required
+              />
+            )}
+            {bookableForm && (
+              <p className="text-xs text-green-700 mt-2">هذا النوع يظهر تلقائياً في صفحة الحجوزات</p>
+            )}
+            {form.space_type === 'admin_office' && (
+              <p className="text-xs text-slate-500 mt-2">المكاتب الإدارية للعقود والإيجار — لا تظهر في الحجوزات بالساعة</p>
+            )}
           </div>
-          <input className="input" placeholder={form.space_type === 'meeting_room' ? 'رقم الغرفة' : 'رقم المكتب'} value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
+          <input className="input" placeholder={bookableForm ? 'رقم الغرفة' : 'رقم المكتب'} value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
           <input className="input" placeholder="الاسم" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          {form.space_type !== 'meeting_room' && (
+          {!bookableForm && (
             <input className="input" placeholder="الطابق" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} />
           )}
           <input className="input" placeholder="السعة" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
-          {form.space_type === 'meeting_room' ? (
+          {bookableForm ? (
             <input className="input" placeholder="السعر / ساعة" value={form.hourly_price} onChange={(e) => setForm({ ...form, hourly_price: e.target.value })} />
           ) : (
             <>
@@ -233,7 +296,7 @@ export default function SpacesPage() {
             <div className="flex justify-between items-start gap-2">
               <div>
                 <span className="inline-block px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600 mb-2">
-                  {SPACE_LABELS[s.space_type]}
+                  {spaceTypeLabel(s.space_type, s.space_type_label)}
                 </span>
                 <h3 className="font-bold">{s.name}</h3>
                 <p className="text-sm text-slate-500">#{s.number}{s.floor ? ` • طابق ${s.floor}` : ''}</p>
@@ -243,13 +306,23 @@ export default function SpacesPage() {
                 <button onClick={() => handleDelete(s)} className="text-xs text-red-600 hover:underline">حذف</button>
               </div>
             </div>
-            <span className={`inline-block px-2 py-1 rounded text-xs mt-2 ${statusColors[s.status] || ''}`}>{s.status}</span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <span className={`inline-block px-2 py-1 rounded text-xs ${statusColors[s.status] || ''}`}>{s.status}</span>
+              {s.bookable ? (
+                <span className="inline-block px-2 py-1 rounded text-xs bg-blue-100 text-blue-700">قابل للحجز</span>
+              ) : (
+                <span className="inline-block px-2 py-1 rounded text-xs bg-amber-100 text-amber-700">إيجار فقط</span>
+              )}
+            </div>
             <div className="mt-3 text-sm space-y-1">
               {s.capacity && <p>السعة: {s.capacity}</p>}
               {s.hourly_price != null && <p>{s.hourly_price} ج.م / ساعة</p>}
               {s.monthly_price != null && <p>شهري: {s.monthly_price} ج.م</p>}
               {s.annual_price != null && <p>سنوي: {s.annual_price} ج.م</p>}
             </div>
+            {!s.bookable && s.space_type === 'manager_office' && (
+              <p className="text-xs text-amber-700 mt-2">لتظهر في الحجوزات: عدّلها واختر «غرفة مدير» ثم احفظ</p>
+            )}
           </div>
         ))}
         {visible.length === 0 && (

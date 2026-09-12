@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
+import { spaceTypeLabel } from '@/lib/spaces';
 
 function calcHours(start: string, end: string) {
   if (!start || !end) return '';
@@ -137,7 +138,9 @@ export default function BookingsPage() {
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <p className="font-bold">{room.room_name}</p>
-                  <p className="text-xs text-slate-500">#{room.room_number} • سعة {room.capacity || '—'}</p>
+                  <p className="text-xs text-slate-500">
+                    #{room.room_number} • {spaceTypeLabel(room.space_type || 'meeting_room', room.space_type_label)} • سعة {room.capacity || '—'}
+                  </p>
                 </div>
                 {room.free_slots?.length > 0 ? (
                   <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700">يوجد فترات فارغة</span>
@@ -196,7 +199,11 @@ export default function BookingsPage() {
               </select>
               <select className="input" value={form.room_id} onChange={(e) => setForm({ ...form, room_id: e.target.value })} required>
                 <option value="">اختر الغرفة</option>
-                {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} ({spaceTypeLabel(r.equipment?.space_type || 'meeting_room', r.equipment?.space_type_label)})
+                  </option>
+                ))}
               </select>
             </>
           )}
