@@ -14,8 +14,9 @@
 #   DRY_RUN=1 bash safe-docker-cleanup.sh    # preview only
 #   EXTRA_CACHE=1 bash safe-docker-cleanup.sh  # also prune all unused build cache
 #
-# Install daily cron:
+# VPS-wide install (run once as root on any server):
 #   bash install-docker-cleanup-cron.sh
+# Installs to: /usr/local/sbin/docker-safe-cleanup.sh
 
 set -euo pipefail
 
