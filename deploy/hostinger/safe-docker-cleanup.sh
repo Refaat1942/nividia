@@ -12,7 +12,7 @@
 # Usage:
 #   bash safe-docker-cleanup.sh              # default safe mode
 #   DRY_RUN=1 bash safe-docker-cleanup.sh    # preview only
-#   EXTRA_CACHE=1 bash safe-docker-cleanup.sh  # also prune all unused build cache
+#   EXTRA_CACHE=1 bash safe-docker-cleanup.sh  # aggressive (optional, not recommended for cron)
 #
 # VPS-wide install (run once as root on any server):
 #   bash install-docker-cleanup-cron.sh

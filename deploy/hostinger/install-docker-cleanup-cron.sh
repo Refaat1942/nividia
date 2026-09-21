@@ -31,7 +31,8 @@ fi
 sed 's/\r$//' "$SOURCE_SCRIPT" > "$INSTALL_PATH"
 chmod 755 "$INSTALL_PATH"
 
-CRON_LINE="${CRON_SCHEDULE} EXTRA_CACHE=1 ${INSTALL_PATH} >> ${LOG_FILE} 2>&1"
+# EXTRA_CACHE=0 in cron — never auto-delete large unused cache (manual only if needed)
+CRON_LINE="${CRON_SCHEDULE} EXTRA_CACHE=0 ${INSTALL_PATH} >> ${LOG_FILE} 2>&1"
 
 TMP="$(mktemp)"
 crontab -l 2>/dev/null \
