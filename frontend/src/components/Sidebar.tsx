@@ -26,7 +26,7 @@ export default function Sidebar() {
   });
 
   return (
-    <aside className="w-64 h-screen bg-sidebar text-white flex flex-col fixed right-0 top-0 z-40">
+    <aside className="print:hidden w-64 h-screen bg-sidebar text-white flex flex-col fixed right-0 top-0 z-40">
       <div className="p-4 border-b border-slate-700 shrink-0">
         <LogoImage
           refreshKey={logoKey}

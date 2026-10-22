@@ -11,8 +11,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen" dir="rtl">
       <Sidebar />
-      <main className="mr-64 p-6 lg:p-8">
-        <div className="flex items-center justify-between gap-3 mb-4">
+      <main className="mr-64 p-6 lg:p-8 print:m-0 print:p-0">
+        <div className="print:hidden flex items-center justify-between gap-3 mb-4">
           {user && (
             <p className="text-sm text-slate-600 truncate" title={user.full_name}>
               {user.full_name}

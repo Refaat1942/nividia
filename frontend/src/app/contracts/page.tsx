@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api, apiUpload, downloadFile, openPrintPage } from '@/lib/api';
 
 export default function ContractsPage() {
+  const router = useRouter();
   const [tab, setTab] = useState<'contracts' | 'templates'>('contracts');
   const [contracts, setContracts] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
@@ -80,10 +82,8 @@ export default function ContractsPage() {
       setShowGen(false);
       setPreview(null);
       load();
-      if (result?.id) {
-        openPrintPage(`/contracts/${result.id}/print`);
-        downloadFile(`/contracts/${result.id}/download`, `${result.contract_number || 'contract'}.docx`);
-      }
+      // Open the editor so remaining blanks can be filled and the contract printed.
+      if (result?.id) router.push(`/contracts/${result.id}/document`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'فشل توليد العقد');
     }
@@ -140,7 +140,7 @@ export default function ContractsPage() {
       <div className="flex justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">العقود</h1>
-          <p className="text-slate-500 text-sm">رفع قالب DOCX، تعبئة تلقائية، وطباعة</p>
+          <p className="text-slate-500 text-sm">رفع قالب DOCX، تعبئة الفراغات، تعديل النص، وطباعة مباشرة</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowUpload(true)} className="btn-secondary">رفع قالب</button>
@@ -206,7 +206,10 @@ export default function ContractsPage() {
                       {t.variables_json?.field_count || 0} حقول • {t.variables_json?.auto_mapped_count || 0} مربوطة تلقائيًا
                     </p>
                   </div>
-                  <button onClick={() => deleteTemplate(t.id)} className="text-red-600 text-sm hover:underline">حذف</button>
+                  <div className="flex flex-col items-end gap-1">
+                    <button onClick={() => router.push(`/contracts/templates/${t.id}/document`)} className="text-primary text-sm hover:underline">تعبئة وطباعة مباشرة</button>
+                    <button onClick={() => deleteTemplate(t.id)} className="text-red-600 text-sm hover:underline">حذف</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -234,6 +237,7 @@ export default function ContractsPage() {
                   <td className="p-3">{c.status}</td>
                   <td className="p-3">{c.created_at?.slice(0, 10)}</td>
                   <td className="p-3 space-x-2 space-x-reverse">
+                    <button onClick={() => router.push(`/contracts/${c.id}/document`)} className="text-primary font-semibold hover:underline">تعبئة وتعديل وطباعة</button>
                     <button onClick={() => viewContract(c.id)} className="text-primary hover:underline">عرض البيانات</button>
                     <button onClick={() => setEditing(c)} className="text-primary hover:underline">تعديل</button>
                     <button onClick={() => downloadFile(`/contracts/${c.id}/download`, `${c.contract_number}.docx`)} className="text-primary hover:underline">تحميل</button>
@@ -307,7 +311,7 @@ export default function ContractsPage() {
           ) : form.customer_id && form.template_id ? (
             <p className="text-sm text-slate-500">جاري تحميل المعاينة...</p>
           ) : null}
-          <button type="submit" className="btn-primary w-full md:w-auto">توليد وطباعة العقد</button>
+          <button type="submit" className="btn-primary w-full md:w-auto">إنشاء العقد وفتحه للتعبئة والطباعة</button>
         </form>
       </Modal>
 
@@ -345,6 +349,7 @@ export default function ContractsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => downloadFile(`/contracts/${viewing.id}/download`, `${viewing.contract_number}.docx`)} className="btn-secondary">تحميل DOCX</button>
+              <button onClick={() => router.push(`/contracts/${viewing.id}/document`)} className="btn-primary">تعبئة وتعديل وطباعة</button>
               <button onClick={() => openPrintPage(`/contracts/${viewing.id}/print`)} className="btn-secondary">طباعة</button>
               <button onClick={() => api(`/contracts/${viewing.id}/regenerate`, { method: 'POST' }).then(() => viewContract(viewing.id))} className="btn-primary">إعادة توليد</button>
             </div>
