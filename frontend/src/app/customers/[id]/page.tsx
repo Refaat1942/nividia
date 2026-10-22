@@ -413,6 +413,7 @@ export default function CustomerProfilePage() {
                   <td className="p-3">{c.start_date || '—'}</td>
                   <td className="p-3">{c.end_date || '—'}</td>
                   <td className="p-3 space-x-2 space-x-reverse">
+                    <button onClick={() => router.push(`/contracts/${c.id}/document`)} className="text-primary font-semibold hover:underline">تعبئة وتعديل وطباعة</button>
                     <button onClick={() => api<any>(`/contracts/${c.id}`).then(setViewingContract)} className="text-primary hover:underline">عرض</button>
                     <button onClick={() => downloadFile(`/contracts/${c.id}/download`, `${c.contract_number}.docx`)} className="text-primary hover:underline">تحميل</button>
                     <button onClick={() => openPrintPage(`/contracts/${c.id}/print`)} className="text-primary hover:underline">طباعة</button>

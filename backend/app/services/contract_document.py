@@ -365,7 +365,7 @@ class _HtmlToBlocks(HTMLParser):
         if "gap" in cls.split():
             w = re.match(r"([\d.]+)em", css.get("width", ""))
             spaces = int(round(float(w.group(1)) / 0.25)) if w else 8
-            self._ensure_block()["runs"].append({"text": " " * spaces, "style": self._style()})
+            self._ensure_block()["runs"].append({"text": " " * spaces, "style": self._style(), "gap": spaces})
             self.stack.append((tag, style, False))
             self.stack.append(("__gap__", {}, False))
             return
@@ -434,6 +434,73 @@ def _set_rtl_run(run, style: dict) -> None:
     rpr.append(OxmlElement("w:rtl"))
 
 
+# A paragraph split by one wide gap into two short sides ("الطرف الأول      الطرف الثاني")
+# is written as a borderless two-column row so the sides never wrap onto separate lines.
+_SIDE_GAP_MIN = 20
+_SIDE_MAX_CHARS = 80
+
+
+def _split_two_sides(runs: list[dict]) -> tuple[list[dict], list[dict]] | None:
+    gaps = [i for i, r in enumerate(runs) if r.get("gap", 0) >= _SIDE_GAP_MIN]
+    if len(gaps) != 1:
+        return None
+    right, left = runs[: gaps[0]], runs[gaps[0] + 1:]
+    right_text = "".join(r["text"] for r in right).strip()
+    left_text = "".join(r["text"] for r in left).strip()
+    if not right_text or not left_text or "\n" in right_text + left_text:
+        return None
+    if len(right_text) > _SIDE_MAX_CHARS or len(left_text) > _SIDE_MAX_CHARS:
+        return None
+    return right, left
+
+
+def _prepare_paragraph(para, align: str | None = None, page_break: bool = False) -> None:
+    para._p.get_or_add_pPr().append(OxmlElement("w:bidi"))
+    para.paragraph_format.space_after = Pt(4)
+    if page_break:
+        para.paragraph_format.page_break_before = True
+    if align == "center":
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    elif align == "justify":
+        para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    elif align == "left":
+        # In a bidi paragraph Word's "right" is the visual left edge.
+        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+
+def _write_runs(para, runs: list[dict], strip: bool = False) -> None:
+    if strip and runs:
+        runs = [dict(r) for r in runs]
+        runs[0]["text"] = runs[0]["text"].lstrip()
+        runs[-1]["text"] = runs[-1]["text"].rstrip()
+    for run_data in runs:
+        pieces = run_data["text"].split("\n")
+        for idx, piece in enumerate(pieces):
+            if idx:
+                para.add_run().add_break()
+            if piece:
+                _set_rtl_run(para.add_run(piece), run_data["style"])
+
+
+def _add_two_sided_row(doc, right: list[dict], left: list[dict], page_break: bool) -> None:
+    section = doc.sections[-1]
+    text_width = section.page_width - section.left_margin - section.right_margin
+    table = doc.add_table(rows=1, cols=2)
+    tbl_pr = table._tbl.tblPr
+    tbl_pr.append(OxmlElement("w:bidiVisual"))  # first cell on the right
+    borders = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        el = OxmlElement(f"w:{edge}")
+        el.set(qn("w:val"), "nil")
+        borders.append(el)
+    tbl_pr.append(borders)
+    for cell, runs, align in ((table.cell(0, 0), right, None), (table.cell(0, 1), left, "left")):
+        cell.width = text_width // 2
+        para = cell.paragraphs[0]
+        _prepare_paragraph(para, align, page_break and cell is table.cell(0, 0))
+        _write_runs(para, runs, strip=True)
+
+
 def html_to_docx(template_path: str, document_html: str, output_path: str) -> str:
     """Write the edited contract HTML into a DOCX that keeps the template's page setup."""
     parser = _HtmlToBlocks()
@@ -446,36 +513,27 @@ def html_to_docx(template_path: str, document_html: str, output_path: str) -> st
         if child.tag != qn("w:sectPr"):
             body.remove(child)
 
+    blocks = parser.blocks
+    # Trailing empty paragraphs only push the last lines onto an extra blank page.
+    while blocks and not blocks[-1].get("page_break") and not "".join(r["text"] for r in blocks[-1]["runs"]).strip():
+        blocks.pop()
+
     pending_break = False
-    for block in parser.blocks:
+    for block in blocks:
         if block.get("page_break"):
             pending_break = True
             continue
-        para = doc.add_paragraph()
-        ppr = para._p.get_or_add_pPr()
-        ppr.append(OxmlElement("w:bidi"))
-        para.paragraph_format.space_after = Pt(4)
-        if pending_break:
-            para.paragraph_format.page_break_before = True
-            pending_break = False
-        align = block.get("align")
-        if align == "center":
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        elif align == "justify":
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        elif align == "left":
-            # In a bidi paragraph Word's "right" is the visual left edge.
-            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         runs = block["runs"]
         if len(runs) == 1 and runs[0]["text"] == "\n":
             runs = []  # the editor's "<p><br></p>" is just an empty paragraph
-        for run_data in runs:
-            pieces = run_data["text"].split("\n")
-            for idx, piece in enumerate(pieces):
-                if idx:
-                    para.add_run().add_break()
-                if piece:
-                    _set_rtl_run(para.add_run(piece), run_data["style"])
+        sides = _split_two_sides(runs)
+        if sides:
+            _add_two_sided_row(doc, *sides, page_break=pending_break)
+        else:
+            para = doc.add_paragraph()
+            _prepare_paragraph(para, block.get("align"), pending_break)
+            _write_runs(para, runs)
+        pending_break = False
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     doc.save(output_path)
