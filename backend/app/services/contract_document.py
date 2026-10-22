@@ -538,3 +538,11 @@ def html_to_docx(template_path: str, document_html: str, output_path: str) -> st
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     doc.save(output_path)
     return output_path
+
+
+def count_blanks(docx_path: str) -> int:
+    """Number of fillable blanks the editor will show for a template."""
+    try:
+        return docx_to_editable_html(docx_path).count("data-fill=")
+    except Exception:
+        return 0

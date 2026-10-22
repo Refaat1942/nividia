@@ -14,6 +14,7 @@ from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Contract, ContractTemplate, Customer, Office, Package, Room
 from app.services.audit import log_audit
 from app.services.contract_document import (
+    count_blanks,
     docx_to_editable_html,
     html_to_docx,
     print_page_html,
@@ -75,6 +76,7 @@ def _template_dict(tpl: ContractTemplate) -> dict:
         "version": tpl.version,
         "is_active": tpl.is_active,
         "variables_json": tpl.variables_json,
+        "blank_count": count_blanks(tpl.file_path) if tpl.file_path and os.path.exists(tpl.file_path) else 0,
         "created_at": tpl.created_at.isoformat() if tpl.created_at else None,
     }
 
