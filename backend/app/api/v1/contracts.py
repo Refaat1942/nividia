@@ -1,10 +1,11 @@
 import os
+import tempfile
 import uuid
 from datetime import date
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,12 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Contract, ContractTemplate, Customer, Office, Package, Room
 from app.services.audit import log_audit
+from app.services.contract_document import (
+    docx_to_editable_html,
+    html_to_docx,
+    print_page_html,
+    sanitize_document_html,
+)
 from app.services.contracts import (
     build_contract_context,
     generate_contract_docx,
@@ -43,6 +50,10 @@ class ContractUpdate(BaseModel):
     package_id: uuid.UUID | None = None
     office_id: uuid.UUID | None = None
     room_id: uuid.UUID | None = None
+
+
+class DocumentSave(BaseModel):
+    html: str = Field(max_length=2_000_000)
 
 
 class TemplateUpdate(BaseModel):
@@ -393,10 +404,41 @@ def regenerate_contract(contract_id: uuid.UUID, request: Request, db: DbSession,
     return _contract_dict(contract, customer, db)
 
 
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _docx_response(template_path: str, document_html: str, filename: str) -> Response:
+    with tempfile.TemporaryDirectory() as tmp:
+        out = html_to_docx(template_path, document_html, os.path.join(tmp, "contract.docx"))
+        with open(out, "rb") as f:
+            content = f.read()
+    return Response(
+        content,
+        media_type=DOCX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/templates/{template_id}/docx")
+def template_docx(template_id: uuid.UUID, data: DocumentSave, db: DbSession, user: CurrentUser):
+    """Word file of a filled template that was not saved as a contract."""
+    tpl = db.get(ContractTemplate, template_id)
+    if not tpl or not tpl.file_path or not os.path.exists(tpl.file_path):
+        raise HTTPException(404, "القالب غير موجود")
+    return _docx_response(tpl.file_path, sanitize_document_html(data.html), "contract.docx")
+
+
 @router.get("/{contract_id}/download")
 def download_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
     contract = db.get(Contract, contract_id)
-    if not contract or not contract.generated_file_path or not os.path.exists(contract.generated_file_path):
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    # Edited in the platform editor: build the Word file from the edited document.
+    saved_html = (contract.metadata_json or {}).get("document_html")
+    template = db.get(ContractTemplate, contract.template_id) if contract.template_id else None
+    if saved_html and template and template.file_path and os.path.exists(template.file_path):
+        return _docx_response(template.file_path, saved_html, f"{contract.contract_number}.docx")
+    if not contract.generated_file_path or not os.path.exists(contract.generated_file_path):
         raise HTTPException(404, "العقد غير موجود")
     return FileResponse(
         contract.generated_file_path,
@@ -405,42 +447,97 @@ def download_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
     )
 
 
+def _contract_context(db, contract: Contract) -> dict:
+    base = (contract.metadata_json or {}).get("base")
+    if base:
+        return base
+    customer = db.get(Customer, contract.customer_id)
+    if not customer:
+        return {}
+    package = db.get(Package, contract.package_id) if contract.package_id else None
+    office = db.get(Office, contract.office_id) if contract.office_id else None
+    room = db.get(Room, contract.room_id) if contract.room_id else None
+    return build_contract_context(db, customer, package, office, room, contract)
+
+
+def _contract_document_html(db, contract: Contract) -> tuple[str, bool]:
+    """Saved (edited) document if any, otherwise the template with blanks pre-filled."""
+    saved = (contract.metadata_json or {}).get("document_html")
+    if saved:
+        return saved, True
+    template = db.get(ContractTemplate, contract.template_id) if contract.template_id else None
+    if not template or not template.file_path or not os.path.exists(template.file_path):
+        raise HTTPException(400, "لا يوجد ملف قالب مرتبط بهذا العقد")
+    return docx_to_editable_html(template.file_path, _contract_context(db, contract)), False
+
+
+@router.get("/templates/{template_id}/document")
+def get_template_document(
+    template_id: uuid.UUID, db: DbSession, user: CurrentUser, customer_id: uuid.UUID | None = None,
+):
+    """Blank (or customer pre-filled) template to fill and print without saving a contract."""
+    tpl = db.get(ContractTemplate, template_id)
+    if not tpl or not tpl.file_path or not os.path.exists(tpl.file_path):
+        raise HTTPException(404, "القالب غير موجود")
+    context: dict = {}
+    if customer_id:
+        customer = db.get(Customer, customer_id)
+        if not customer:
+            raise HTTPException(404, "العميل غير موجود")
+        context = build_contract_context(db, customer)
+    return {"html": docx_to_editable_html(tpl.file_path, context), "title": tpl.name}
+
+
+@router.get("/{contract_id}/document")
+def get_contract_document(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    customer = db.get(Customer, contract.customer_id)
+    doc_html, saved = _contract_document_html(db, contract)
+    return {
+        "html": doc_html,
+        "saved": saved,
+        "title": f"عقد {contract.contract_number}",
+        "contract_number": contract.contract_number,
+        "customer_name": customer.full_name if customer else None,
+    }
+
+
+@router.put("/{contract_id}/document")
+def save_contract_document(
+    contract_id: uuid.UUID, data: DocumentSave, request: Request, db: DbSession, user: CurrentUser,
+):
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    # Reassign the dict so SQLAlchemy detects the JSONB change.
+    contract.metadata_json = {**(contract.metadata_json or {}), "document_html": sanitize_document_html(data.html)}
+    log_audit(db, user_id=user.id, action="edit_document", module="contracts", record_id=str(contract_id),
+              ip_address=get_client_ip(request))
+    db.commit()
+    return {"message": "تم حفظ العقد", "saved": True}
+
+
+@router.delete("/{contract_id}/document")
+def reset_contract_document(contract_id: uuid.UUID, request: Request, db: DbSession, user: CurrentUser):
+    contract = db.get(Contract, contract_id)
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    meta = dict(contract.metadata_json or {})
+    meta.pop("document_html", None)
+    contract.metadata_json = meta
+    log_audit(db, user_id=user.id, action="reset_document", module="contracts", record_id=str(contract_id),
+              ip_address=get_client_ip(request))
+    db.commit()
+    doc_html, saved = _contract_document_html(db, contract)
+    return {"html": doc_html, "saved": saved}
+
+
 @router.get("/{contract_id}/print", response_class=HTMLResponse)
 def print_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
     contract = db.get(Contract, contract_id)
     if not contract or contract.deleted_at:
         raise HTTPException(404, "العقد غير موجود")
-    customer = db.get(Customer, contract.customer_id)
-    field_rows = _contract_field_rows(db, contract)
-
-    rows = ""
-    for f in field_rows:
-        label = f.get("label_ar") or f.get("field")
-        value = f.get("value") or ""
-        rows += f"<tr><td style='padding:8px;border:1px solid #ddd;font-weight:bold;width:35%'>{label}</td><td style='padding:8px;border:1px solid #ddd'>{value}</td></tr>"
-
-    html = f"""<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="utf-8">
-  <title>عقد {contract.contract_number}</title>
-  <style>
-    body {{ font-family: Arial, sans-serif; padding: 40px; color: #1e293b; }}
-    h1 {{ text-align: center; margin-bottom: 8px; }}
-    .sub {{ text-align: center; color: #64748b; margin-bottom: 32px; }}
-    table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; }}
-    .actions {{ text-align: center; margin: 24px; }}
-    button {{ background: #1e40af; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; }}
-    @media print {{ .actions {{ display: none; }} }}
-  </style>
-</head>
-<body>
-  <h1>عقد رقم {contract.contract_number}</h1>
-  <p class="sub">العميل: {customer.full_name if customer else '—'}</p>
-  <table>{rows}</table>
-  <div class="actions">
-    <button onclick="window.print()">طباعة</button>
-  </div>
-</body>
-</html>"""
-    return HTMLResponse(html)
+    doc_html, _ = _contract_document_html(db, contract)
+    return HTMLResponse(print_page_html(f"عقد {contract.contract_number}", doc_html))
