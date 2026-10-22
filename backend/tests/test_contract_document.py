@@ -28,3 +28,19 @@ def test_sanitize_strips_scripts_and_handlers():
     clean = sanitize_document_html(dirty)
     assert "script" not in clean and "onclick" not in clean and "javascript:" not in clean
     assert '<span data-fill="1">c</span>' in clean
+
+
+def test_html_to_docx_keeps_edits(tmp_path):
+    from docx import Document
+
+    from app.services.contract_document import html_to_docx
+
+    html = docx_to_editable_html(TEMPLATE, {"customer_name": "أحمد"})
+    html = html.replace("تمهيد", "تمهيد معدل", 1)
+    out = html_to_docx(TEMPLATE, html + '<div class="page-break"></div><p><b>بند إضافي</b></p>', str(tmp_path / "c.docx"))
+    doc = Document(out)
+    texts = [p.text for p in doc.paragraphs]
+    assert "تمهيد معدل" in texts
+    assert any("أحمد" in t for t in texts)
+    last = doc.paragraphs[-1]
+    assert last.text == "بند إضافي" and last.runs[0].bold and last.paragraph_format.page_break_before

@@ -6,11 +6,16 @@ staff can fill them, while the rest of the text stays freely editable.
 """
 
 import html
+import os
 import re
 from datetime import date, datetime
+from html.parser import HTMLParser
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Pt
 
 # A blank is a run of dots / dashes / underscores (spaces allowed between them),
 # or an empty pair of brackets.  Arabic text in the template sometimes uses the
@@ -293,3 +298,185 @@ def print_page_html(title: str, body_html: str) -> str:
   <script>window.addEventListener('load', function () {{ setTimeout(function () {{ window.print(); }}, 300); }});</script>
 </body>
 </html>"""
+
+
+# --- Edited HTML -> DOCX ------------------------------------------------------
+
+_BLOCK_TAGS = {"p", "div", "h1", "h2", "h3", "h4", "li", "tr"}
+_EMPTY_FILL = ".............."
+
+
+class _HtmlToBlocks(HTMLParser):
+    """Flatten editor HTML into paragraphs of styled text runs."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[dict] = []
+        self.current: dict | None = None
+        self.stack: list[tuple[str, dict, bool]] = []  # (tag, style, is_empty_fill)
+        self.fill_had_text: list[bool] = []
+
+    def _style(self) -> dict:
+        merged: dict = {}
+        for _, st, _ in self.stack:
+            merged.update(st)
+        return merged
+
+    def _ensure_block(self) -> dict:
+        if self.current is None:
+            self.current = {"runs": [], "align": None, "page_break_before": False}
+            self.blocks.append(self.current)
+        return self.current
+
+    def _close_block(self) -> None:
+        self.current = None
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        css = _parse_css(a.get("style") or "")
+        cls = a.get("class") or ""
+        if tag in _BLOCK_TAGS:
+            if "page-break" in cls:
+                self._close_block()
+                self.blocks.append({"page_break": True})
+                return
+            self._close_block()
+            block = self._ensure_block()
+            align = css.get("text-align") or a.get("align")
+            if align:
+                block["align"] = align
+            return
+        if tag == "br":
+            self._ensure_block()["runs"].append({"text": "\n", "style": self._style()})
+            return
+        style: dict = {}
+        if tag in ("b", "strong") or css.get("font-weight") in ("700", "bold", "800", "900"):
+            style["bold"] = True
+        if css.get("font-weight") in ("400", "normal"):
+            style["bold"] = False
+        if tag in ("u", "ins") or "underline" in css.get("text-decoration", ""):
+            style["underline"] = True
+        if tag in ("i", "em") or css.get("font-style") == "italic":
+            style["italic"] = True
+        size = css.get("font-size", "")
+        m = re.match(r"([\d.]+)pt", size)
+        if m:
+            style["size"] = float(m.group(1))
+        if "gap" in cls.split():
+            w = re.match(r"([\d.]+)em", css.get("width", ""))
+            spaces = int(round(float(w.group(1)) / 0.25)) if w else 8
+            self._ensure_block()["runs"].append({"text": " " * spaces, "style": self._style()})
+            self.stack.append((tag, style, False))
+            self.stack.append(("__gap__", {}, False))
+            return
+        is_fill = "data-fill" in a
+        self.stack.append((tag, style, is_fill))
+        if is_fill:
+            self.fill_had_text.append(False)
+
+    def handle_endtag(self, tag):
+        if tag in _BLOCK_TAGS:
+            self._close_block()
+            return
+        if self.stack and self.stack[-1][0] == "__gap__":
+            self.stack.pop()
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                _, _, is_fill = self.stack[i]
+                if is_fill and self.fill_had_text:
+                    had = self.fill_had_text.pop()
+                    if not had:
+                        self._ensure_block()["runs"].append({"text": _EMPTY_FILL, "style": self._style()})
+                del self.stack[i:]
+                break
+
+    def handle_data(self, data):
+        if not data:
+            return
+        if self.stack and self.stack[-1][0] == "__gap__":
+            return
+        if self.current is None and not data.strip():
+            return  # whitespace between blocks
+        if self.fill_had_text and data.strip():
+            self.fill_had_text[-1] = True
+        self._ensure_block()["runs"].append({"text": data, "style": self._style()})
+
+
+def _parse_css(style: str) -> dict:
+    out = {}
+    for decl in style.split(";"):
+        if ":" in decl:
+            k, v = decl.split(":", 1)
+            out[k.strip().lower()] = v.strip().lower()
+    return out
+
+
+def _set_rtl_run(run, style: dict) -> None:
+    rpr = run._r.get_or_add_rPr()
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        rpr.insert(0, fonts)
+    for attr in ("w:ascii", "w:hAnsi", "w:cs"):
+        fonts.set(qn(attr), "Arial")
+    if style.get("bold"):
+        run.bold = True
+        rpr.append(OxmlElement("w:bCs"))
+    if style.get("italic"):
+        run.italic = True
+    if style.get("underline"):
+        run.underline = True
+    size = style.get("size") or 16
+    run.font.size = Pt(size)
+    sz_cs = OxmlElement("w:szCs")
+    sz_cs.set(qn("w:val"), str(int(round(size * 2))))
+    rpr.append(sz_cs)
+    rpr.append(OxmlElement("w:rtl"))
+
+
+def html_to_docx(template_path: str, document_html: str, output_path: str) -> str:
+    """Write the edited contract HTML into a DOCX that keeps the template's page setup."""
+    parser = _HtmlToBlocks()
+    parser.feed(document_html or "")
+    parser.close()
+
+    doc = Document(template_path)
+    body = doc.element.body
+    for child in list(body.iterchildren()):
+        if child.tag != qn("w:sectPr"):
+            body.remove(child)
+
+    pending_break = False
+    for block in parser.blocks:
+        if block.get("page_break"):
+            pending_break = True
+            continue
+        para = doc.add_paragraph()
+        ppr = para._p.get_or_add_pPr()
+        ppr.append(OxmlElement("w:bidi"))
+        para.paragraph_format.space_after = Pt(4)
+        if pending_break:
+            para.paragraph_format.page_break_before = True
+            pending_break = False
+        align = block.get("align")
+        if align == "center":
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        elif align == "justify":
+            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        elif align == "left":
+            # In a bidi paragraph Word's "right" is the visual left edge.
+            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        runs = block["runs"]
+        if len(runs) == 1 and runs[0]["text"] == "\n":
+            runs = []  # the editor's "<p><br></p>" is just an empty paragraph
+        for run_data in runs:
+            pieces = run_data["text"].split("\n")
+            for idx, piece in enumerate(pieces):
+                if idx:
+                    para.add_run().add_break()
+                if piece:
+                    _set_rtl_run(para.add_run(piece), run_data["style"])
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    doc.save(output_path)
+    return output_path

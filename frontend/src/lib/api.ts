@@ -104,6 +104,21 @@ export async function downloadFile(path: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+export async function downloadFilePost(path: string, body: unknown, filename: string) {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error('فشل التحميل');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function openPrintPage(path: string) {
   const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {

@@ -1,9 +1,10 @@
 import os
+import tempfile
 import uuid
 from datetime import date
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -12,7 +13,12 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Contract, ContractTemplate, Customer, Office, Package, Room
 from app.services.audit import log_audit
-from app.services.contract_document import docx_to_editable_html, print_page_html, sanitize_document_html
+from app.services.contract_document import (
+    docx_to_editable_html,
+    html_to_docx,
+    print_page_html,
+    sanitize_document_html,
+)
 from app.services.contracts import (
     build_contract_context,
     generate_contract_docx,
@@ -398,10 +404,41 @@ def regenerate_contract(contract_id: uuid.UUID, request: Request, db: DbSession,
     return _contract_dict(contract, customer, db)
 
 
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _docx_response(template_path: str, document_html: str, filename: str) -> Response:
+    with tempfile.TemporaryDirectory() as tmp:
+        out = html_to_docx(template_path, document_html, os.path.join(tmp, "contract.docx"))
+        with open(out, "rb") as f:
+            content = f.read()
+    return Response(
+        content,
+        media_type=DOCX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/templates/{template_id}/docx")
+def template_docx(template_id: uuid.UUID, data: DocumentSave, db: DbSession, user: CurrentUser):
+    """Word file of a filled template that was not saved as a contract."""
+    tpl = db.get(ContractTemplate, template_id)
+    if not tpl or not tpl.file_path or not os.path.exists(tpl.file_path):
+        raise HTTPException(404, "القالب غير موجود")
+    return _docx_response(tpl.file_path, sanitize_document_html(data.html), "contract.docx")
+
+
 @router.get("/{contract_id}/download")
 def download_contract(contract_id: uuid.UUID, db: DbSession, user: CurrentUser):
     contract = db.get(Contract, contract_id)
-    if not contract or not contract.generated_file_path or not os.path.exists(contract.generated_file_path):
+    if not contract or contract.deleted_at:
+        raise HTTPException(404, "العقد غير موجود")
+    # Edited in the platform editor: build the Word file from the edited document.
+    saved_html = (contract.metadata_json or {}).get("document_html")
+    template = db.get(ContractTemplate, contract.template_id) if contract.template_id else None
+    if saved_html and template and template.file_path and os.path.exists(template.file_path):
+        return _docx_response(template.file_path, saved_html, f"{contract.contract_number}.docx")
+    if not contract.generated_file_path or not os.path.exists(contract.generated_file_path):
         raise HTTPException(404, "العقد غير موجود")
     return FileResponse(
         contract.generated_file_path,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
-import { api } from '@/lib/api';
+import { api, downloadFile, downloadFilePost } from '@/lib/api';
 
 type Field = { id: string; key: string; label: string; value: string };
 
@@ -12,11 +12,15 @@ interface Props {
   loadPath: string;
   /** API path for PUT (save) / DELETE (reset). Omit for fill-and-print without saving. */
   savePath?: string;
+  /** GET path of the saved contract's Word file (contract mode). */
+  downloadPath?: string;
+  /** POST path turning the current HTML into a Word file (no-save mode). */
+  docxPostPath?: string;
   backHref: string;
 }
 
 /** Fill the blanks of a contract, edit any of its text, and print it. */
-export default function ContractEditor({ loadPath, savePath, backHref }: Props) {
+export default function ContractEditor({ loadPath, savePath, downloadPath, docxPostPath, backHref }: Props) {
   const docRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState('');
   const [fields, setFields] = useState<Field[]>([]);
@@ -117,6 +121,21 @@ export default function ContractEditor({ loadPath, savePath, backHref }: Props) 
     window.print();
   }
 
+  async function downloadWord() {
+    setError('');
+    const filename = `${title || 'contract'}.docx`;
+    try {
+      if (downloadPath) {
+        if (dirty && !(await save())) return;
+        await downloadFile(downloadPath, filename);
+      } else if (docxPostPath && docRef.current) {
+        await downloadFilePost(docxPostPath, { html: docRef.current.innerHTML }, filename);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'فشل التحميل');
+    }
+  }
+
   async function reset() {
     if (!confirm('استعادة نص القالب الأصلي؟ ستفقد كل التعديلات على النص.')) return;
     try {
@@ -165,6 +184,9 @@ export default function ContractEditor({ loadPath, savePath, backHref }: Props) 
               <button onClick={save} disabled={saving || !dirty} className="btn-secondary disabled:opacity-50">
                 {saving ? 'جاري الحفظ...' : 'حفظ'}
               </button>
+            )}
+            {(downloadPath || docxPostPath) && (
+              <button onClick={downloadWord} disabled={loading} className="btn-secondary">تحميل Word</button>
             )}
             <button onClick={print} disabled={loading} className="btn-primary">طباعة</button>
           </div>
