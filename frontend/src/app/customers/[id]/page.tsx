@@ -233,7 +233,7 @@ export default function CustomerProfilePage() {
         <form onSubmit={saveEdit} className="grid grid-cols-2 gap-4">
           <input className="input" value={editForm.full_name || ''} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
           <input className="input" value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
-          <input className="input" value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+          <input className="input" placeholder="البريد الإلكتروني (اختياري)" value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
           <input className="input" value={editForm.company_name || ''} onChange={(e) => setEditForm({ ...editForm, company_name: e.target.value })} />
           <input className="input col-span-2" value={editForm.address || ''} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <button type="submit" className="btn-primary col-span-2">حفظ</button>

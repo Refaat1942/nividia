@@ -19,6 +19,13 @@ class CustomerBase(BaseModel):
     notes: Optional[str] = None
     status: str = "active"
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_email_to_none(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     @field_validator("phone")
     @classmethod
     def check_phone(cls, v: str) -> str:
@@ -56,7 +63,7 @@ class CustomerUpdate(BaseModel):
     @field_validator("email", mode="before")
     @classmethod
     def empty_email_to_none(cls, v):
-        if v == "":
+        if isinstance(v, str) and not v.strip():
             return None
         return v
 

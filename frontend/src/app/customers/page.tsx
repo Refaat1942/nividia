@@ -41,7 +41,7 @@ export default function CustomersPage() {
         await api(`/customers/${editing.id}`, { method: 'PATCH', body: JSON.stringify(body) });
         setEditing(null);
       } else {
-        await api('/customers', { method: 'POST', body: JSON.stringify(form) });
+        await api('/customers', { method: 'POST', body: JSON.stringify({ ...form, email: form.email.trim() || null }) });
         setShowForm(false);
       }
       setForm(emptyForm);
@@ -94,7 +94,7 @@ export default function CustomersPage() {
           <input className="input" placeholder="الاسم الكامل" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required />
           <input className="input" placeholder="الرقم القومي" value={form.national_id} onChange={(e) => setForm({ ...form, national_id: e.target.value })} required disabled={!!editing} />
           <input className="input" placeholder="الهاتف" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
-          <input className="input" placeholder="البريد" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <input className="input" placeholder="البريد الإلكتروني (اختياري)" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <input className="input" placeholder="اسم الشركة" value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} />
           <input className="input" placeholder="العنوان" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           {editing && (
