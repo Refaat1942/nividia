@@ -57,6 +57,8 @@ export default function SpacesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<SpaceItem | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   function load() {
     api<any>('/rooms/sync-bookable-offices', { method: 'POST' }).catch(() => {}).finally(() => {
@@ -130,13 +132,30 @@ export default function SpacesPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    setFormError('');
     const { space_type, space_type_label } = resolvedType();
 
     if (form.space_type === 'custom' && !form.custom_type_label.trim()) {
-      alert('أدخل اسم النوع المخصص');
+      setFormError('أدخل اسم النوع المخصص');
       return;
     }
 
+    setSaving(true);
+    try {
+      await saveSpace(space_type, space_type_label);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'تعذر حفظ المساحة');
+      return;
+    } finally {
+      setSaving(false);
+    }
+    setShowForm(false);
+    setEditing(null);
+    setForm(emptyForm);
+    load();
+  }
+
+  async function saveSpace(space_type: string, space_type_label: string) {
     if (isBookableSpaceType(space_type)) {
       const body = {
         room_number: form.number,
@@ -174,10 +193,15 @@ export default function SpacesPage() {
         }
       }
     }
-    setShowForm(false);
+  }
+
+  function openNew() {
+    // Start with the type of the tab being viewed, e.g. "مكاتب إدارية" -> admin office.
+    const space_type = filter !== 'all' && filter !== 'custom' ? filter : 'admin_office';
     setEditing(null);
-    setForm(emptyForm);
-    load();
+    setFormError('');
+    setForm({ ...emptyForm, space_type });
+    setShowForm(true);
   }
 
   async function handleDelete(space: SpaceItem) {
@@ -190,6 +214,7 @@ export default function SpacesPage() {
   function openEdit(space: SpaceItem) {
     const isCustom = !BUILTIN_SPACE_TYPES[space.space_type];
     setEditing(space);
+    setFormError('');
     setForm({
       space_type: isCustom ? 'custom' : space.space_type,
       custom_type_label: isCustom ? (space.space_type_label || space.space_type) : '',
@@ -222,7 +247,7 @@ export default function SpacesPage() {
           <h1 className="text-2xl font-bold">الغرف والمساحات</h1>
           <p className="text-slate-500 text-sm">مكاتب إدارية، غرف مدير، وقاعات اجتماعات — الغرف القابلة للحجز تظهر في صفحة الحجوزات</p>
         </div>
-        <button onClick={() => { setShowForm(true); setEditing(null); setForm(emptyForm); }} className="btn-primary">
+        <button onClick={openNew} className="btn-primary">
           + مساحة جديدة
         </button>
       </div>
@@ -250,9 +275,9 @@ export default function SpacesPage() {
               value={form.space_type}
               onChange={(e) => setForm({ ...form, space_type: e.target.value })}
             >
-              <option value="meeting_room">قاعة اجتماعات (حجز بالساعة)</option>
-              <option value="manager_office">غرفة مدير (حجز بالساعة)</option>
               <option value="admin_office">مكتب إداري (إيجار شهري/سنوي)</option>
+              <option value="manager_office">غرفة مدير (حجز بالساعة)</option>
+              <option value="meeting_room">قاعة اجتماعات (حجز بالساعة)</option>
               <option value="custom">نوع مخصص (حجز بالساعة)</option>
             </select>
             {form.space_type === 'custom' && (
@@ -271,29 +296,56 @@ export default function SpacesPage() {
               <p className="text-xs text-slate-500 mt-2">المكاتب الإدارية للعقود والإيجار — لا تظهر في الحجوزات بالساعة</p>
             )}
           </div>
-          <input className="input" placeholder={bookableForm ? 'رقم الغرفة' : 'رقم المكتب'} value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
-          <input className="input" placeholder="الاسم" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <label className="block">
+            <span className="text-sm text-slate-600">{bookableForm ? 'رقم الغرفة *' : 'رقم المكتب *'}</span>
+            <input className="input" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600">الاسم *</span>
+            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </label>
           {!bookableForm && (
-            <input className="input" placeholder="الطابق" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} />
+            <label className="block">
+              <span className="text-sm text-slate-600">الطابق</span>
+              <input className="input" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} />
+            </label>
           )}
-          <input className="input" placeholder="السعة" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
+          <label className="block">
+            <span className="text-sm text-slate-600">السعة (عدد الأشخاص)</span>
+            <input className="input" inputMode="numeric" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
+          </label>
           {bookableForm ? (
-            <input className="input" placeholder="السعر / ساعة" value={form.hourly_price} onChange={(e) => setForm({ ...form, hourly_price: e.target.value })} />
+            <label className="block">
+              <span className="text-sm text-slate-600">السعر / ساعة (ج.م)</span>
+              <input className="input" inputMode="decimal" value={form.hourly_price} onChange={(e) => setForm({ ...form, hourly_price: e.target.value })} />
+            </label>
           ) : (
             <>
-              <input className="input" placeholder="السعر الشهري" value={form.monthly_price} onChange={(e) => setForm({ ...form, monthly_price: e.target.value })} />
-              <input className="input" placeholder="السعر السنوي" value={form.annual_price} onChange={(e) => setForm({ ...form, annual_price: e.target.value })} />
+              <label className="block">
+                <span className="text-sm text-slate-600">السعر الشهري (ج.م)</span>
+                <input className="input" inputMode="decimal" value={form.monthly_price} onChange={(e) => setForm({ ...form, monthly_price: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="text-sm text-slate-600">السعر السنوي (ج.م)</span>
+                <input className="input" inputMode="decimal" value={form.annual_price} onChange={(e) => setForm({ ...form, annual_price: e.target.value })} />
+              </label>
             </>
           )}
-          <select className="input-select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-            <option value="available">متاح</option>
-            <option value="occupied">مشغول / مؤجر</option>
-            <option value="reserved">محجوز</option>
-            <option value="maintenance">صيانة</option>
-            <option value="disabled">معطل</option>
-          </select>
+          <label className="block">
+            <span className="text-sm text-slate-600">الحالة</span>
+            <select className="input-select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+              <option value="available">متاح</option>
+              <option value="occupied">مشغول / مؤجر</option>
+              <option value="reserved">محجوز</option>
+              <option value="maintenance">صيانة</option>
+              <option value="disabled">معطل</option>
+            </select>
+          </label>
+          {formError && (
+            <div className="md:col-span-2 rounded-lg bg-red-50 text-red-700 text-sm px-4 py-3">{formError}</div>
+          )}
           <div className="md:col-span-2">
-            <button type="submit" className="btn-primary">حفظ</button>
+            <button type="submit" disabled={saving} className="btn-primary disabled:opacity-50">{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
           </div>
         </form>
       </Modal>

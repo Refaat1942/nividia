@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Room
 from app.services.audit import log_audit
-from app.services.spaces import sync_bookable_offices_to_rooms
+from app.services.spaces import archived_number, release_deleted_number, sync_bookable_offices_to_rooms
 
 router = APIRouter(prefix="/rooms", tags=["غرف الاجتماعات"])
 
@@ -63,6 +63,8 @@ def list_rooms(db: DbSession, user: CurrentUser, page: int = 1, page_size: int =
 
 @router.post("", status_code=201)
 def create_room(data: RoomSchema, request: Request, db: DbSession, user: CurrentUser):
+    data.room_number = data.room_number.strip()
+    release_deleted_number(db, Room, "room_number", data.room_number, label="رقم الغرفة")
     room = Room(**data.model_dump())
     db.add(room)
     db.flush()
@@ -78,6 +80,8 @@ def update_room(room_id: uuid.UUID, data: RoomSchema, request: Request, db: DbSe
     room = db.get(Room, room_id)
     if not room or room.deleted_at:
         raise HTTPException(404, "الغرفة غير موجودة")
+    data.room_number = data.room_number.strip()
+    release_deleted_number(db, Room, "room_number", data.room_number, exclude_id=room.id, label="رقم الغرفة")
     for k, v in data.model_dump().items():
         setattr(room, k, v)
     db.commit()
@@ -92,5 +96,6 @@ def delete_room(room_id: uuid.UUID, db: DbSession, user: CurrentUser):
         raise HTTPException(404)
     from datetime import datetime, timezone
     room.deleted_at = datetime.now(timezone.utc)
+    room.room_number = archived_number(room.room_number, room.id)  # free the number for reuse
     db.commit()
     return {"message": "تم الحذف"}

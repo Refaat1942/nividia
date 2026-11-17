@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.deps import CurrentUser, DbSession, get_client_ip
 from app.models.entities import Office, OfficeAssignment
 from app.services.audit import log_audit
+from app.services.spaces import archived_number, release_deleted_number
 
 router = APIRouter(prefix="/offices", tags=["المكاتب"])
 
@@ -47,6 +48,8 @@ def list_offices(db: DbSession, user: CurrentUser, status: str | None = None):
 
 @router.post("", status_code=201)
 def create_office(data: OfficeSchema, request: Request, db: DbSession, user: CurrentUser):
+    data.office_number = data.office_number.strip()
+    release_deleted_number(db, Office, "office_number", data.office_number, label="رقم المكتب")
     office = Office(**data.model_dump())
     db.add(office)
     db.commit()
@@ -62,6 +65,7 @@ def delete_office(office_id: uuid.UUID, request: Request, db: DbSession, user: C
     if not office or office.deleted_at:
         raise HTTPException(404, "المكتب غير موجود")
     office.deleted_at = datetime.now(timezone.utc)
+    office.office_number = archived_number(office.office_number, office.id)  # free the number for reuse
     log_audit(db, user_id=user.id, action="delete", module="offices", record_id=str(office_id),
               ip_address=get_client_ip(request))
     db.commit()
@@ -73,6 +77,8 @@ def update_office(office_id: uuid.UUID, data: OfficeSchema, db: DbSession, user:
     office = db.get(Office, office_id)
     if not office or office.deleted_at:
         raise HTTPException(404)
+    data.office_number = data.office_number.strip()
+    release_deleted_number(db, Office, "office_number", data.office_number, exclude_id=office.id, label="رقم المكتب")
     for k, v in data.model_dump().items():
         setattr(office, k, v)
     db.commit()
