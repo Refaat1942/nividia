@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
@@ -24,6 +25,8 @@ export default function BookingsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [slotCheck, setSlotCheck] = useState<{ available: boolean } | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [rentalOffices, setRentalOffices] = useState(0);
   const [form, setForm] = useState({
     customer_id: '', room_id: '', booking_date: '', start_time: '', end_time: '',
     hours: '1', booking_status: 'confirmed', payment_status: 'pending', notes: '',
@@ -35,8 +38,8 @@ export default function BookingsPage() {
 
   const loadAvailability = useCallback(() => {
     api<any>(`/bookings/availability?booking_date=${viewDate}`)
-      .then(setAvailability)
-      .catch(console.error);
+      .then((d) => { setAvailability(d); setLoadError(''); })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : 'تعذر تحميل الغرف'));
   }, [viewDate]);
 
   function loadRooms() {
@@ -52,6 +55,9 @@ export default function BookingsPage() {
     loadAvailability();
     loadRooms();
     api<any>('/customers').then((d) => setCustomers(d.items)).catch(console.error);
+    api<any>('/offices')
+      .then((d) => setRentalOffices((d.items || []).filter((o: any) => (o.amenities?.space_type || 'admin_office') === 'admin_office').length))
+      .catch(() => {});
   }, [loadBookings, loadAvailability]);
 
   useEffect(() => {
@@ -191,8 +197,20 @@ export default function BookingsPage() {
               )}
             </div>
           ))}
-          {!availability?.rooms?.length && (
-            <p className="text-center text-slate-400 py-6">لا توجد غرف متاحة</p>
+          {loadError && (
+            <p className="text-center text-red-700 bg-red-50 rounded-lg py-4">تعذر تحميل الغرف: {loadError}</p>
+          )}
+          {!loadError && availability && !availability.rooms?.length && (
+            <div className="text-center py-6 space-y-2">
+              <p className="text-slate-600 font-medium">لا توجد غرف قابلة للحجز</p>
+              {rentalOffices > 0 && (
+                <p className="text-sm text-amber-700">
+                  لديك {rentalOffices} مساحة مسجلة كـ«مكتب إداري» — المكاتب الإدارية للإيجار الشهري ولا تظهر هنا.
+                  لإتاحتها للحجز بالساعة اضغط «إتاحة للحجز بالساعة» عليها في صفحة الغرف.
+                </p>
+              )}
+              <Link href="/rooms" className="inline-block text-primary hover:underline text-sm">الذهاب إلى الغرف والمساحات</Link>
+            </div>
           )}
         </div>
       </div>

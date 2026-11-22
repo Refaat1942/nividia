@@ -1,4 +1,5 @@
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.entities import Office, Room
@@ -39,6 +40,14 @@ def sync_bookable_offices_to_rooms(db: Session) -> list[str]:
                 room.capacity = office.capacity
             continue
 
+        # A deleted room may still hold this number (the column is unique even
+        # for deleted rows); free it, otherwise the insert fails and every page
+        # that lists rooms (bookings, attendance) breaks.
+        for old in db.scalars(
+            select(Room).where(Room.room_number == office.office_number, Room.deleted_at.is_not(None))
+        ).all():
+            old.room_number = archived_number(old.room_number, old.id)
+        db.flush()
         room = Room(
             room_number=office.office_number,
             name=office.name,
@@ -46,7 +55,11 @@ def sync_bookable_offices_to_rooms(db: Session) -> list[str]:
             status="available" if office.status in ("available", "reserved") else office.status,
             equipment=equipment,
         )
-        db.add(room)
+        try:
+            with db.begin_nested():
+                db.add(room)
+        except IntegrityError:
+            continue  # number taken by another active room; skip rather than fail the page
         created.append(office.name)
 
     if created:

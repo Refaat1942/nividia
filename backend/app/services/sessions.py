@@ -6,7 +6,15 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.entities import Customer, CustomerSession, CustomerStatus, HoursTransactionType, SessionStatus
+from app.models.entities import (
+    Customer,
+    CustomerSession,
+    CustomerStatus,
+    HoursTransactionType,
+    Office,
+    Room,
+    SessionStatus,
+)
 from app.services.hours import add_hours_transaction, get_customer_balance, get_hours_summary
 from app.utils.time_format import breakdown_minutes, breakdown_seconds
 
@@ -60,6 +68,15 @@ def check_in_customer(
     balance = get_customer_balance(db, customer_id)
     if balance <= 0:
         raise ValueError("لا يوجد رصيد ساعات متاح للعميل")
+
+    if room_id:
+        room = db.get(Room, room_id)
+        if not room or room.deleted_at:
+            raise ValueError("الغرفة غير موجودة")
+    if office_id:
+        office = db.get(Office, office_id)
+        if not office or office.deleted_at:
+            raise ValueError("المكتب غير موجود")
 
     session = CustomerSession(
         customer_id=customer_id,
@@ -119,7 +136,21 @@ def check_out_customer(
     return session
 
 
-def session_to_dict(session: CustomerSession, customer: Customer | None = None, include_live: bool = False) -> dict:
+def space_names(db: Session) -> dict[uuid.UUID, str]:
+    """Names of all rooms and offices (deleted ones too, for history rows)."""
+    names = {row.id: row.name for row in db.execute(select(Room.id, Room.name)).all()}
+    names.update({row.id: row.name for row in db.execute(select(Office.id, Office.name)).all()})
+    return names
+
+
+def session_to_dict(
+    session: CustomerSession,
+    customer: Customer | None = None,
+    include_live: bool = False,
+    names: dict[uuid.UUID, str] | None = None,
+) -> dict:
+    names = names or {}
+    space_id = session.room_id or session.office_id
     data = {
         "id": str(session.id),
         "customer_id": str(session.customer_id),
@@ -128,6 +159,7 @@ def session_to_dict(session: CustomerSession, customer: Customer | None = None, 
         "customer_phone": customer.phone if customer else None,
         "office_id": str(session.office_id) if session.office_id else None,
         "room_id": str(session.room_id) if session.room_id else None,
+        "space_name": names.get(space_id) if space_id else None,
         "check_in_at": session.check_in_at.isoformat() if session.check_in_at else None,
         "check_out_at": session.check_out_at.isoformat() if session.check_out_at else None,
         "duration_minutes": session.duration_minutes,

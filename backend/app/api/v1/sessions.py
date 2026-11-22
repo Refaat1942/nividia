@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
 from app.core.deps import CurrentUser, DbSession, get_client_ip
-from app.models.entities import Customer, CustomerSession, HoursTransaction, SessionStatus
+from app.models.entities import Customer, CustomerSession, HoursTransaction, Office, Room, SessionStatus
 from app.services.audit import log_audit
 from app.services.hours import get_customer_balance, get_hours_summary
 from app.services.notify import notify_admins
@@ -17,7 +17,9 @@ from app.services.sessions import (
     get_active_session,
     get_customer_session_summary,
     session_to_dict,
+    space_names,
 )
+from app.services.spaces import sync_bookable_offices_to_rooms
 
 router = APIRouter(prefix="/sessions", tags=["الحضور والانصراف"])
 
@@ -51,7 +53,8 @@ def list_sessions(
     if status:
         q = q.where(CustomerSession.status == status)
     rows = db.execute(q.order_by(CustomerSession.check_in_at.desc()).limit(limit)).all()
-    items = [session_to_dict(s, c, include_live=True) for s, c in rows]
+    names = space_names(db)
+    items = [session_to_dict(s, c, include_live=True, names=names) for s, c in rows]
     return {"items": items}
 
 
@@ -64,13 +67,55 @@ def list_active_sessions(db: DbSession, user: CurrentUser):
         ).order_by(CustomerSession.check_in_at)
     ).all()
     items = []
+    names = space_names(db)
     for session, customer in rows:
         hours = get_hours_summary(db, customer.id)
-        data = session_to_dict(session, customer, include_live=True)
+        data = session_to_dict(session, customer, include_live=True, names=names)
         data["remaining_hours"] = hours["remaining_hours"]
         data["remaining_time"] = hours["remaining_time"]
         items.append(data)
     return {"items": items, "count": len(items)}
+
+
+@router.get("/spaces")
+def list_session_spaces(db: DbSession, user: CurrentUser):
+    """Rooms and offices a customer can be checked in to, with who is there now."""
+    sync_bookable_offices_to_rooms(db)
+    db.commit()
+    present: dict = {}
+    active = db.execute(
+        select(CustomerSession.room_id, CustomerSession.office_id, func.count())
+        .where(CustomerSession.status == SessionStatus.CHECKED_IN.value, CustomerSession.check_out_at.is_(None))
+        .group_by(CustomerSession.room_id, CustomerSession.office_id)
+    ).all()
+    for room_id, office_id, count in active:
+        key = room_id or office_id
+        present[key] = present.get(key, 0) + count
+
+    items = []
+    rooms = db.scalars(
+        select(Room).where(Room.deleted_at.is_(None), Room.status != "disabled").order_by(Room.room_number)
+    ).all()
+    synced_offices = set()
+    for room in rooms:
+        eq = room.equipment or {}
+        if eq.get("synced_from_office_id"):
+            synced_offices.add(eq["synced_from_office_id"])
+        items.append({
+            "kind": "room", "id": str(room.id), "name": room.name, "number": room.room_number,
+            "capacity": room.capacity, "present_count": present.get(room.id, 0),
+        })
+    offices = db.scalars(
+        select(Office).where(Office.deleted_at.is_(None), Office.status != "disabled").order_by(Office.office_number)
+    ).all()
+    for office in offices:
+        if str(office.id) in synced_offices:
+            continue  # already listed as its bookable room
+        items.append({
+            "kind": "office", "id": str(office.id), "name": office.name, "number": office.office_number,
+            "capacity": office.capacity, "present_count": present.get(office.id, 0),
+        })
+    return {"items": items}
 
 
 @router.get("/lookup")
@@ -88,6 +133,7 @@ def lookup_customer_session(db: DbSession, user: CurrentUser, q: str = Query(...
         ).order_by(Customer.full_name).limit(8)
     ).all()
     items = []
+    names = space_names(db)
     for customer in customers:
         hours = get_hours_summary(db, customer.id)
         active = get_active_session(db, customer.id)
@@ -102,7 +148,7 @@ def lookup_customer_session(db: DbSession, user: CurrentUser, q: str = Query(...
             "session": None,
         }
         if active:
-            session_data = session_to_dict(active, customer, include_live=True)
+            session_data = session_to_dict(active, customer, include_live=True, names=names)
             entry["session"] = session_data
             entry["check_in_at"] = session_data.get("check_in_at")
             entry["elapsed_seconds"] = session_data.get("elapsed_seconds", 0)
@@ -161,7 +207,7 @@ def session_check_in(data: CheckInRequest, request: Request, db: DbSession, user
     )
     db.commit()
     db.refresh(session)
-    return session_to_dict(session, customer, include_live=True)
+    return session_to_dict(session, customer, include_live=True, names=space_names(db))
 
 
 @router.delete("/{session_id}")

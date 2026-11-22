@@ -59,6 +59,7 @@ export default function SpacesPage() {
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   function load() {
     api<any>('/rooms/sync-bookable-offices', { method: 'POST' }).catch(() => {}).finally(() => {
@@ -103,8 +104,9 @@ export default function SpacesPage() {
           };
         });
         setSpaces([...officeItems, ...roomItems]);
+        setLoadError('');
       })
-      .catch(console.error);
+      .catch((e) => setLoadError(e instanceof Error ? e.message : 'تعذر تحميل المساحات'));
     });
   }
 
@@ -135,6 +137,10 @@ export default function SpacesPage() {
     setFormError('');
     const { space_type, space_type_label } = resolvedType();
 
+    if (!form.space_type) {
+      setFormError('اختر نوع المساحة');
+      return;
+    }
     if (form.space_type === 'custom' && !form.custom_type_label.trim()) {
       setFormError('أدخل اسم النوع المخصص');
       return;
@@ -197,7 +203,7 @@ export default function SpacesPage() {
 
   function openNew() {
     // Start with the type of the tab being viewed, e.g. "مكاتب إدارية" -> admin office.
-    const space_type = filter !== 'all' && filter !== 'custom' ? filter : 'admin_office';
+    const space_type = filter !== 'all' ? filter : '';
     setEditing(null);
     setFormError('');
     setForm({ ...emptyForm, space_type });
@@ -238,7 +244,7 @@ export default function SpacesPage() {
     disabled: 'bg-slate-100 text-slate-500',
   };
 
-  const bookableForm = form.space_type !== 'admin_office';
+  const bookableForm = !!form.space_type && form.space_type !== 'admin_office';
 
   return (
     <Layout>
@@ -274,7 +280,9 @@ export default function SpacesPage() {
               className="input-select mt-1"
               value={form.space_type}
               onChange={(e) => setForm({ ...form, space_type: e.target.value })}
+              required
             >
+              <option value="">اختر نوع المساحة</option>
               <option value="admin_office">مكتب إداري (إيجار شهري/سنوي)</option>
               <option value="manager_office">غرفة مدير (حجز بالساعة)</option>
               <option value="meeting_room">قاعة اجتماعات (حجز بالساعة)</option>
@@ -350,6 +358,8 @@ export default function SpacesPage() {
         </form>
       </Modal>
 
+      {loadError && <div className="card mb-4 bg-red-50 text-red-700 text-sm py-3">تعذر تحميل المساحات: {loadError}</div>}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {visible.map((s) => (
           <div key={`${s.kind}-${s.id}`} className="card">
@@ -380,8 +390,14 @@ export default function SpacesPage() {
               {s.monthly_price != null && <p>شهري: {s.monthly_price} ج.م</p>}
               {s.annual_price != null && <p>سنوي: {s.annual_price} ج.م</p>}
             </div>
-            {!s.bookable && s.space_type === 'manager_office' && (
-              <p className="text-xs text-amber-700 mt-2">لتظهر في الحجوزات: عدّلها واختر «غرفة مدير» ثم احفظ</p>
+            {!s.bookable && (
+              <button
+                type="button"
+                onClick={() => { openEdit(s); setForm((f) => ({ ...f, space_type: s.space_type === 'manager_office' ? 'manager_office' : 'meeting_room' })); }}
+                className="text-xs text-primary hover:underline mt-2"
+              >
+                إتاحة للحجز بالساعة (تظهر في الحجوزات)
+              </button>
             )}
           </div>
         ))}

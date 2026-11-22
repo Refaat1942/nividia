@@ -13,12 +13,17 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
 }
 
+type Space = { kind: 'room' | 'office'; id: string; name: string; number: string; capacity?: number; present_count: number };
+
 export default function SessionsPage() {
   const [active, setActive] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [selectedSpace, setSelectedSpace] = useState('');
+  const [roomFilter, setRoomFilter] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [lookupQuery, setLookupQuery] = useState('');
@@ -30,6 +35,7 @@ export default function SessionsPage() {
     api<any>('/sessions/active').then((d) => setActive(d.items)).catch(console.error);
     const today = new Date().toISOString().slice(0, 10);
     api<any>(`/sessions?session_date=${today}`).then((d) => setHistory(d.items)).catch(console.error);
+    api<any>('/sessions/spaces').then((d) => setSpaces(d.items || [])).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -65,11 +71,17 @@ export default function SessionsPage() {
   async function handleCheckIn(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedCustomer) return;
+    const space = spaces.find((sp) => `${sp.kind}:${sp.id}` === selectedSpace);
     setLoading(true);
     try {
       await api('/sessions/check-in', {
         method: 'POST',
-        body: JSON.stringify({ customer_id: selectedCustomer, notes: notes || null }),
+        body: JSON.stringify({
+          customer_id: selectedCustomer,
+          room_id: space?.kind === 'room' ? space.id : null,
+          office_id: space?.kind === 'office' ? space.id : null,
+          notes: notes || null,
+        }),
       });
       setSelectedCustomer('');
       setNotes('');
@@ -107,6 +119,8 @@ export default function SessionsPage() {
       setLoading(false);
     }
   }
+
+  const visibleActive = roomFilter ? active.filter((a) => (a.room_id || a.office_id) === roomFilter) : active;
 
   function liveElapsed(checkInAt: string) {
     const start = new Date(checkInAt).getTime();
@@ -152,7 +166,10 @@ export default function SessionsPage() {
                   </div>
                   {r.is_checked_in ? (
                     <div className="text-center min-w-[180px]">
-                      <p className="text-xs text-green-700 font-medium mb-1">حاضر منذ {r.check_in_at ? formatTime(r.check_in_at) : '—'}</p>
+                      <p className="text-xs text-green-700 font-medium mb-1">
+                        حاضر منذ {r.check_in_at ? formatTime(r.check_in_at) : '—'}
+                        {r.session?.space_name ? ` • ${r.session.space_name}` : ''}
+                      </p>
                       <p className="text-4xl font-bold text-green-800 tabular-nums tracking-wide">
                         {liveElapsed(r.check_in_at)}
                       </p>
@@ -216,6 +233,23 @@ export default function SessionsPage() {
                 </option>
               ))}
             </select>
+            <select
+              className="input"
+              value={selectedSpace}
+              onChange={(e) => setSelectedSpace(e.target.value)}
+              required={spaces.length > 0}
+            >
+              <option value="">اختر الغرفة</option>
+              {spaces.map((sp) => (
+                <option key={`${sp.kind}:${sp.id}`} value={`${sp.kind}:${sp.id}`}>
+                  {sp.name}{sp.number ? ` (#${sp.number})` : ''} — {sp.present_count ? `${sp.present_count} حاضر` : 'فارغة'}
+                  {sp.capacity ? ` / سعة ${sp.capacity}` : ''}
+                </option>
+              ))}
+            </select>
+            {!spaces.length && (
+              <p className="text-xs text-amber-700">لا توجد غرف مسجلة — أضفها من صفحة «الغرف والمساحات»</p>
+            )}
             <input
               className="input"
               placeholder="ملاحظات (اختياري)"
@@ -235,14 +269,44 @@ export default function SessionsPage() {
               {active.length} حاضر
             </span>
           </div>
-          {active.length === 0 ? (
-            <p className="text-slate-500 text-center py-8">لا يوجد عملاء حاضرون حالياً</p>
+          {spaces.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setRoomFilter('')}
+                className={`px-3 py-1.5 rounded-lg text-sm ${!roomFilter ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                كل الغرف ({active.length})
+              </button>
+              {spaces.map((sp) => {
+                const count = active.filter((a) => (a.room_id || a.office_id) === sp.id).length;
+                return (
+                  <button
+                    key={`${sp.kind}:${sp.id}`}
+                    type="button"
+                    onClick={() => setRoomFilter(roomFilter === sp.id ? '' : sp.id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm ${
+                      roomFilter === sp.id ? 'bg-primary text-white'
+                        : count ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    {sp.name} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {visibleActive.length === 0 ? (
+            <p className="text-slate-500 text-center py-8">
+              {roomFilter ? 'لا يوجد أحد في هذه الغرفة الآن' : 'لا يوجد عملاء حاضرون حالياً'}
+            </p>
           ) : (
             <div className="space-y-3">
-              {active.map((s) => (
+              {visibleActive.map((s) => (
                 <div key={s.id} className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
                   <div>
                     <p className="font-semibold">{s.customer_name}</p>
+                    <p className="text-sm font-medium text-primary">{s.space_name ? `الغرفة: ${s.space_name}` : 'بدون غرفة'}</p>
                     <p className="text-sm text-slate-500">{s.customer_phone} • {s.customer_code}</p>
                     <p className="text-2xl font-bold text-blue-800 tabular-nums mt-1">{liveElapsed(s.check_in_at)}</p>
                     <p className="text-xs text-slate-400 mt-1">
@@ -277,6 +341,7 @@ export default function SessionsPage() {
             <thead>
               <tr className="table-head">
                 <th className="p-3 text-right">العميل</th>
+                <th className="p-3 text-right">الغرفة</th>
                 <th className="p-3 text-right">الحضور</th>
                 <th className="p-3 text-right">الانصراف</th>
                 <th className="p-3 text-right">المدة</th>
@@ -289,6 +354,7 @@ export default function SessionsPage() {
               {history.map((s) => (
                 <tr key={s.id} className="border-t">
                   <td className="p-3">{s.customer_name}</td>
+                  <td className="p-3">{s.space_name || '—'}</td>
                   <td className="p-3">{s.check_in_at ? formatTime(s.check_in_at) : '—'}</td>
                   <td className="p-3">{s.check_out_at ? formatTime(s.check_out_at) : '—'}</td>
                   <td className="p-3">{s.duration_minutes != null ? formatDuration(s.duration_minutes) : liveElapsed(s.check_in_at)}</td>
@@ -306,7 +372,7 @@ export default function SessionsPage() {
                 </tr>
               ))}
               {history.length === 0 && (
-                <tr><td colSpan={7} className="p-6 text-center text-slate-500">لا توجد جلسات اليوم</td></tr>
+                <tr><td colSpan={8} className="p-6 text-center text-slate-500">لا توجد جلسات اليوم</td></tr>
               )}
             </tbody>
           </table>
