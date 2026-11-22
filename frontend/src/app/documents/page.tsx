@@ -16,7 +16,7 @@ export default function DocumentsPage() {
   function load() { api<any>('/documents').then((d) => setDocs(d.items)).catch(console.error); }
   useEffect(() => {
     load();
-    api<any>('/customers').then((d) => setCustomers(d.items)).catch(console.error);
+    api<any>('/customers?page_size=1000').then((d) => setCustomers(d.items)).catch(console.error);
   }, []);
 
   async function handleUpload(e: React.FormEvent) {

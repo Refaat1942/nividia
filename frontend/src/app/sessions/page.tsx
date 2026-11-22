@@ -2,11 +2,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
+import Modal from '@/components/Modal';
+import { useQueryOnce } from '@/lib/query';
 import { api } from '@/lib/api';
 import { formatElapsed, formatRemainingFromHours } from '@/lib/time';
 
 function formatDuration(minutes: number) {
   return formatElapsed(minutes * 60);
+}
+
+/** ISO timestamp -> value for <input type="datetime-local"> in local time. */
+function toLocalInput(iso?: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function formatTime(iso: string) {
@@ -24,12 +34,65 @@ export default function SessionsPage() {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [selectedSpace, setSelectedSpace] = useState('');
   const [roomFilter, setRoomFilter] = useState('');
+  const [editingSession, setEditingSession] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ space: '', notes: '', check_in_at: '', check_out_at: '' });
+  const [editError, setEditError] = useState('');
+  const [moveOnly, setMoveOnly] = useState(false);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [lookupQuery, setLookupQuery] = useState('');
   const [lookupResults, setLookupResults] = useState<any[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
+
+  useQueryOnce((q) => {
+    if (q.get('checkin')) setSelectedCustomer(q.get('checkin') || '');
+    if (q.get('room')) setRoomFilter(q.get('room') || '');
+    if (q.get('checkin') || q.get('focus') === 'checkin') {
+      setTimeout(() => document.getElementById('checkin-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+    }
+  });
+
+  function changed() {
+    load();
+    window.dispatchEvent(new Event('sessions-changed'));
+  }
+
+  function openEditSession(session: any, move = false) {
+    setEditError('');
+    setMoveOnly(move);
+    setEditingSession(session);
+    const spaceId = session.room_id || session.office_id;
+    const space = spaces.find((sp) => sp.id === spaceId);
+    setEditForm({
+      space: space ? `${space.kind}:${space.id}` : '',
+      notes: session.notes || '',
+      check_in_at: toLocalInput(session.check_in_at),
+      check_out_at: toLocalInput(session.check_out_at),
+    });
+  }
+
+  async function saveSession(e: React.FormEvent) {
+    e.preventDefault();
+    setEditError('');
+    const space = spaces.find((sp) => `${sp.kind}:${sp.id}` === editForm.space);
+    const body: Record<string, unknown> = {
+      room_id: space?.kind === 'room' ? space.id : null,
+      office_id: space?.kind === 'office' ? space.id : null,
+    };
+    if (!moveOnly) {
+      body.notes = editForm.notes;
+      if (editForm.check_in_at) body.check_in_at = new Date(editForm.check_in_at).toISOString();
+      if (editingSession.check_out_at && editForm.check_out_at) body.check_out_at = new Date(editForm.check_out_at).toISOString();
+    }
+    try {
+      await api(`/sessions/${editingSession.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      setEditingSession(null);
+      changed();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'تعذر الحفظ');
+    }
+  }
 
   const load = useCallback(() => {
     api<any>('/sessions/active').then((d) => setActive(d.items)).catch(console.error);
@@ -40,7 +103,7 @@ export default function SessionsPage() {
 
   useEffect(() => {
     load();
-    api<any>('/customers?status=active').then((d) => setCustomers(d.items)).catch(console.error);
+    api<any>('/customers?status=active&page_size=1000').then((d) => setCustomers(d.items)).catch(console.error);
     const timer = setInterval(() => setNow(Date.now()), 1000);
     const refresh = setInterval(load, 30000);
     return () => { clearInterval(timer); clearInterval(refresh); };
@@ -86,7 +149,7 @@ export default function SessionsPage() {
       setSelectedCustomer('');
       setNotes('');
       setSearch('');
-      load();
+      changed();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'خطأ في تسجيل الحضور');
     } finally {
@@ -99,7 +162,7 @@ export default function SessionsPage() {
     setLoading(true);
     try {
       await api(`/sessions/${sessionId}`, { method: 'DELETE' });
-      load();
+      changed();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'فشل الحذف');
     } finally {
@@ -112,7 +175,7 @@ export default function SessionsPage() {
     setLoading(true);
     try {
       await api(`/sessions/${sessionId}/check-out`, { method: 'POST', body: JSON.stringify({}) });
-      load();
+      changed();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'خطأ في تسجيل الانصراف');
     } finally {
@@ -213,7 +276,7 @@ export default function SessionsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="card lg:col-span-1">
           <h2 className="font-semibold mb-4 text-green-700">تسجيل حضور</h2>
-          <form onSubmit={handleCheckIn} className="space-y-3">
+          <form id="checkin-form" onSubmit={handleCheckIn} className="space-y-3">
             <input
               className="input"
               placeholder="بحث بالاسم أو الهاتف أو الكود..."
@@ -325,7 +388,13 @@ export default function SessionsPage() {
                     >
                       تسجيل انصراف
                     </button>
-                    <button onClick={() => handleDeleteSession(s.id, s.customer_name)} className="text-xs text-red-600 hover:underline" disabled={loading}>حذف</button>
+                    <button onClick={() => openEditSession(s, true)} className="btn-secondary !py-1.5 text-sm whitespace-nowrap" disabled={loading}>
+                      نقل لغرفة أخرى
+                    </button>
+                    <div className="flex justify-center gap-3">
+                      <button onClick={() => openEditSession(s)} className="text-xs text-primary hover:underline" disabled={loading}>تعديل</button>
+                      <button onClick={() => handleDeleteSession(s.id, s.customer_name)} className="text-xs text-red-600 hover:underline" disabled={loading}>حذف</button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -366,7 +435,8 @@ export default function SessionsPage() {
                       {s.status === 'checked_in' ? 'حاضر' : 'منصرف'}
                     </span>
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 space-x-3 space-x-reverse whitespace-nowrap">
+                    <button onClick={() => openEditSession(s)} className="text-primary hover:underline" disabled={loading}>تعديل</button>
                     <button onClick={() => handleDeleteSession(s.id, s.customer_name)} className="text-red-600 hover:underline" disabled={loading}>حذف</button>
                   </td>
                 </tr>
@@ -378,6 +448,53 @@ export default function SessionsPage() {
           </table>
         </div>
       </div>
+
+      <Modal
+        open={!!editingSession}
+        title={moveOnly ? `نقل ${editingSession?.customer_name || ''} لغرفة أخرى` : `تعديل جلسة ${editingSession?.customer_name || ''}`}
+        onClose={() => setEditingSession(null)}
+      >
+        {editingSession && (
+          <form onSubmit={saveSession} className="space-y-4">
+            <label className="block">
+              <span className="text-sm text-slate-600">الغرفة</span>
+              <select className="input-select" value={editForm.space} onChange={(e) => setEditForm({ ...editForm, space: e.target.value })} required={moveOnly}>
+                <option value="">بدون غرفة</option>
+                {spaces.map((sp) => (
+                  <option key={`${sp.kind}:${sp.id}`} value={`${sp.kind}:${sp.id}`}>
+                    {sp.name}{sp.number ? ` (#${sp.number})` : ''} — {sp.present_count ? `${sp.present_count} حاضر` : 'فارغة'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!moveOnly && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="block">
+                    <span className="text-sm text-slate-600">وقت الحضور</span>
+                    <input type="datetime-local" className="input" value={editForm.check_in_at} onChange={(e) => setEditForm({ ...editForm, check_in_at: e.target.value })} />
+                  </label>
+                  {editingSession.check_out_at && (
+                    <label className="block">
+                      <span className="text-sm text-slate-600">وقت الانصراف</span>
+                      <input type="datetime-local" className="input" value={editForm.check_out_at} onChange={(e) => setEditForm({ ...editForm, check_out_at: e.target.value })} />
+                    </label>
+                  )}
+                </div>
+                {editingSession.check_out_at && (
+                  <p className="text-xs text-slate-500">تعديل الأوقات يعيد حساب المدة والساعات المخصومة من رصيد العميل تلقائيًا.</p>
+                )}
+                <label className="block">
+                  <span className="text-sm text-slate-600">ملاحظات</span>
+                  <input className="input" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                </label>
+              </>
+            )}
+            {editError && <div className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{editError}</div>}
+            <button type="submit" className="btn-primary">{moveOnly ? 'نقل' : 'حفظ'}</button>
+          </form>
+        )}
+      </Modal>
     </Layout>
   );
 }

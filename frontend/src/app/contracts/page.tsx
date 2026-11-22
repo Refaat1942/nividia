@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api, apiUpload, downloadFile } from '@/lib/api';
+import { useQueryOnce } from '@/lib/query';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'مسودة',
@@ -42,10 +43,17 @@ export default function ContractsPage() {
 
   useEffect(() => {
     load();
-    api<any>('/customers').then((d) => setCustomers(d.items)).catch(console.error);
+    api<any>('/customers?page_size=1000').then((d) => setCustomers(d.items)).catch(console.error);
     api<any>('/packages').then((d) => setPackages(d.items)).catch(console.error);
     api<any>('/offices').then((d) => setOffices(d.items)).catch(console.error);
   }, []);
+
+  useQueryOnce((q) => {
+    if (q.get('new')) {
+      setForm((f) => ({ ...f, customer_id: q.get('customer') || f.customer_id }));
+      setShowGen(true);
+    }
+  });
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();

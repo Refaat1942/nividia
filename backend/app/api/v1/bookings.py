@@ -28,6 +28,8 @@ class BookingCreate(BaseModel):
 
 
 class BookingUpdate(BaseModel):
+    customer_id: uuid.UUID | None = None
+    room_id: uuid.UUID | None = None
     booking_date: str | None = None
     start_time: str | None = None
     end_time: str | None = None
@@ -179,6 +181,41 @@ def update_booking(booking_id: uuid.UUID, data: BookingUpdate, request: Request,
         updates["hours"] = Decimal(str(updates["hours"]))
     if "price" in updates and updates["price"] is not None:
         updates["price"] = Decimal(str(updates["price"]))
+    updates = {k: v for k, v in updates.items() if v is not None or k == "notes"}
+
+    new_room = updates.get("room_id", booking.room_id)
+    new_date = updates.get("booking_date", booking.booking_date)
+    new_start = updates.get("start_time", booking.start_time)
+    new_end = updates.get("end_time", booking.end_time)
+    if {"room_id", "booking_date", "start_time", "end_time"} & updates.keys():
+        room = db.get(Room, new_room)
+        if not room or room.deleted_at or room.status == "disabled":
+            raise HTTPException(400, "الغرفة غير متاحة")
+        if updates.get("booking_status", booking.booking_status) != "cancelled" and has_booking_conflict(
+            db, new_room, new_date, new_start, new_end, exclude_id=booking.id,
+        ):
+            raise HTTPException(400, "يوجد حجز متعارض في هذا الوقت")
+
+    # Keep the customers' hour balances in step with the edited booking.
+    if booking.hours_deducted:
+        old_customer, old_hours = booking.customer_id, booking.hours_deducted
+        new_customer = updates.get("customer_id", old_customer)
+        new_hours = updates.get("hours", old_hours)
+        if new_customer != old_customer or new_hours != old_hours:
+            add_hours_transaction(
+                db, customer_id=old_customer, amount=old_hours,
+                transaction_type=HoursTransactionType.REFUND.value,
+                reason="تعديل حجز", reference_type="booking", reference_id=booking.id,
+                created_by=user.id,
+            )
+            add_hours_transaction(
+                db, customer_id=new_customer, amount=-new_hours,
+                transaction_type=HoursTransactionType.USAGE.value,
+                reason="تعديل حجز", reference_type="booking", reference_id=booking.id,
+                created_by=user.id, allow_negative=True,
+            )
+            booking.hours_deducted = new_hours
+
     for k, v in updates.items():
         setattr(booking, k, v)
     log_audit(db, user_id=user.id, action="update", module="bookings", record_id=str(booking_id),

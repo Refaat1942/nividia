@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
+import { useQueryOnce } from '@/lib/query';
 import { BUILTIN_SPACE_TYPES, isBookableSpaceType, slugifySpaceType, spaceTypeLabel } from '@/lib/spaces';
 
 type FilterType = 'all' | string;
@@ -111,6 +112,7 @@ export default function SpacesPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useQueryOnce((q) => { if (q.get('new')) openNew(); });
 
   const visible = useMemo(() => spaces.filter((s) => {
     if (filter === 'all') return true;

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
+import { useQueryOnce } from '@/lib/query';
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<any[]>([]);
@@ -14,7 +15,14 @@ export default function PaymentsPage() {
   const [form, setForm] = useState({ customer_id: '', amount: '', payment_date: '', payment_method: 'cash', status: 'paid', notes: '', reference: '' });
 
   function load() { api<any>('/payments').then((d) => { setPayments(d.items); setTotal(d.total_amount); }).catch(console.error); }
-  useEffect(() => { load(); api<any>('/customers').then((d) => setCustomers(d.items)).catch(console.error); }, []);
+  useEffect(() => { load(); api<any>('/customers?page_size=1000').then((d) => setCustomers(d.items)).catch(console.error); }, []);
+
+  useQueryOnce((q) => {
+    if (q.get('new')) {
+      setForm((f) => ({ ...f, customer_id: q.get('customer') || '', payment_date: new Date().toISOString().slice(0, 10) }));
+      setShowForm(true);
+    }
+  });
 
   async function handleDelete(p: any) {
     if (!confirm(`حذف دفعة ${Number(p.amount).toLocaleString('ar-EG')} ج.م؟`)) return;

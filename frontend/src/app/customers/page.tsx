@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useQueryOnce } from '@/lib/query';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
@@ -18,10 +19,11 @@ export default function CustomersPage() {
   const [error, setError] = useState('');
 
   function load() {
-    api<any>(`/customers?search=${search}`).then((d) => setCustomers(d.items)).catch(console.error);
+    api<any>(`/customers?page_size=1000&search=${encodeURIComponent(search)}`).then((d) => setCustomers(d.items)).catch(console.error);
   }
 
   useEffect(() => { load(); }, [search]);
+  useQueryOnce((q) => { if (q.get('new')) setShowForm(true); });
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

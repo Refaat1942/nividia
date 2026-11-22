@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
+import { useQueryOnce } from '@/lib/query';
 import { spaceTypeLabel } from '@/lib/spaces';
 
 function calcHours(start: string, end: string) {
@@ -26,6 +27,7 @@ export default function BookingsPage() {
   const [editing, setEditing] = useState<any>(null);
   const [slotCheck, setSlotCheck] = useState<{ available: boolean } | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [formError, setFormError] = useState('');
   const [rentalOffices, setRentalOffices] = useState(0);
   const [form, setForm] = useState({
     customer_id: '', room_id: '', booking_date: '', start_time: '', end_time: '',
@@ -54,14 +56,14 @@ export default function BookingsPage() {
     loadBookings();
     loadAvailability();
     loadRooms();
-    api<any>('/customers').then((d) => setCustomers(d.items)).catch(console.error);
+    api<any>('/customers?page_size=1000').then((d) => setCustomers(d.items)).catch(console.error);
     api<any>('/offices')
       .then((d) => setRentalOffices((d.items || []).filter((o: any) => (o.amenities?.space_type || 'admin_office') === 'admin_office').length))
       .catch(() => {});
   }, [loadBookings, loadAvailability]);
 
   useEffect(() => {
-    if (!form.room_id || !form.booking_date || !form.start_time || !form.end_time || editing) {
+    if (!form.room_id || !form.booking_date || !form.start_time || !form.end_time) {
       setSlotCheck(null);
       return;
     }
@@ -70,17 +72,23 @@ export default function BookingsPage() {
       booking_date: form.booking_date,
       start_time: form.start_time,
       end_time: form.end_time,
+      ...(editing && { exclude_id: editing.id }),
     });
     api<any>(`/bookings/check-slot?${q}`)
       .then(setSlotCheck)
       .catch(() => setSlotCheck(null));
   }, [form.room_id, form.booking_date, form.start_time, form.end_time, editing]);
 
-  function openNewBooking(prefill?: { room_id?: string; start_time?: string; end_time?: string }) {
+  useQueryOnce((q) => {
+    if (q.get('new')) openNewBooking({ room_id: q.get('room') || '', customer_id: q.get('customer') || '' });
+  });
+
+  function openNewBooking(prefill?: { room_id?: string; start_time?: string; end_time?: string; customer_id?: string }) {
     const start = prefill?.start_time || '';
     const end = prefill?.end_time || '';
+    setFormError('');
     setForm({
-      customer_id: '', room_id: prefill?.room_id || '',
+      customer_id: prefill?.customer_id || '', room_id: prefill?.room_id || '',
       booking_date: viewDate, start_time: start, end_time: end,
       hours: calcHours(start, end) || '1',
       booking_status: 'confirmed', payment_status: 'pending', notes: '',
@@ -91,23 +99,40 @@ export default function BookingsPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!editing && slotCheck && !slotCheck.available) {
-      alert('هذا الوقت محجوز — اختر فترة فارغة من الجدول');
+    setFormError('');
+    if (slotCheck && !slotCheck.available) {
+      setFormError('هذا الوقت محجوز في هذه الغرفة — اختر فترة فارغة من الجدول');
       return;
     }
     const hours = parseFloat(form.hours) || parseFloat(calcHours(form.start_time, form.end_time) || '0');
-    if (editing) {
-      await api(`/bookings/${editing.id}`, { method: 'PATCH', body: JSON.stringify({ ...form, hours }) });
-      setEditing(null);
-    } else {
-      await api('/bookings', {
-        method: 'POST',
-        body: JSON.stringify({ ...form, hours, deduct_hours: true }),
-      });
+    try {
+      if (editing) {
+        await api(`/bookings/${editing.id}`, { method: 'PATCH', body: JSON.stringify({ ...form, hours }) });
+        setEditing(null);
+      } else {
+        await api('/bookings', {
+          method: 'POST',
+          body: JSON.stringify({ ...form, hours, deduct_hours: true }),
+        });
+      }
       setShowForm(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'تعذر حفظ الحجز');
+      return;
     }
     loadBookings();
     loadAvailability();
+  }
+
+  function openEdit(b: any) {
+    setFormError('');
+    setEditing(b);
+    setForm({
+      customer_id: b.customer_id, room_id: b.room_id, booking_date: b.booking_date, start_time: b.start_time,
+      end_time: b.end_time, hours: String(b.hours), booking_status: b.booking_status,
+      payment_status: b.payment_status, notes: b.notes || '',
+    });
+    setShowForm(true);
   }
 
   async function cancelBooking(id: string) {
@@ -168,9 +193,15 @@ export default function BookingsPage() {
                   <p className="text-xs font-medium text-slate-600 mb-1">محجوز:</p>
                   <div className="flex flex-wrap gap-2">
                     {room.bookings.map((b: any) => (
-                      <span key={b.id} className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
-                        {b.start_time}–{b.end_time} ({b.customer_name})
-                      </span>
+                      <button
+                        key={b.id}
+                        type="button"
+                        title="اضغط للتعديل أو النقل لغرفة أخرى"
+                        onClick={() => { const full = bookings.find((x) => x.id === b.id); if (full) openEdit(full); }}
+                        className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs hover:bg-red-200"
+                      >
+                        {b.start_time}–{b.end_time} ({b.customer_name}) ✎
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -217,7 +248,7 @@ export default function BookingsPage() {
 
       <Modal open={showForm || !!editing} title={editing ? 'تعديل حجز' : 'حجز جديد'} onClose={() => { setShowForm(false); setEditing(null); }}>
         <form onSubmit={handleSave} className="grid grid-cols-2 gap-4">
-          {!editing && (
+          {(
             <>
               <select className="input" value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })} required>
                 <option value="">اختر العميل</option>
@@ -238,7 +269,7 @@ export default function BookingsPage() {
           <input type="time" className="input" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value, hours: calcHours(form.start_time, e.target.value) || form.hours })} required />
           <input className="input" placeholder="عدد الساعات" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} />
 
-          {!editing && selectedRoomAvailability && (
+          {selectedRoomAvailability && (
             <div className="col-span-2 bg-slate-50 rounded p-3 text-xs">
               <p className="font-medium mb-1">حجوزات الغرفة في هذا اليوم:</p>
               {selectedRoomAvailability.bookings?.length ? (
@@ -268,6 +299,7 @@ export default function BookingsPage() {
             </>
           )}
           <input className="input col-span-2" placeholder="ملاحظات" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          {formError && <div className="col-span-2 rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{formError}</div>}
           <div className="col-span-2"><button type="submit" className="btn-primary">حفظ الحجز</button></div>
         </form>
       </Modal>
@@ -292,7 +324,7 @@ export default function BookingsPage() {
                 <td className="p-3">{b.hours}</td>
                 <td className="p-3"><span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700">{b.booking_status}</span></td>
                 <td className="p-3 space-x-3 space-x-reverse">
-                  <button onClick={() => { setEditing(b); setForm({ customer_id: b.customer_id, room_id: b.room_id, booking_date: b.booking_date, start_time: b.start_time, end_time: b.end_time, hours: String(b.hours), booking_status: b.booking_status, payment_status: b.payment_status, notes: b.notes || '' }); setShowForm(true); }} className="text-primary hover:underline">تعديل</button>
+                  <button onClick={() => openEdit(b)} className="text-primary hover:underline">تعديل</button>
                   <button onClick={() => cancelBooking(b.id)} className="text-red-600 hover:underline">حذف</button>
                 </td>
               </tr>

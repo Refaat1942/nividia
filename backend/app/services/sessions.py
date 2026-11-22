@@ -10,6 +10,7 @@ from app.models.entities import (
     Customer,
     CustomerSession,
     CustomerStatus,
+    HoursTransaction,
     HoursTransactionType,
     Office,
     Room,
@@ -141,6 +142,73 @@ def space_names(db: Session) -> dict[uuid.UUID, str]:
     names = {row.id: row.name for row in db.execute(select(Room.id, Room.name)).all()}
     names.update({row.id: row.name for row in db.execute(select(Office.id, Office.name)).all()})
     return names
+
+
+def update_session(
+    db: Session,
+    session: CustomerSession,
+    *,
+    staff_id: uuid.UUID,
+    fields: set[str],
+    room_id: uuid.UUID | None = None,
+    office_id: uuid.UUID | None = None,
+    notes: str | None = None,
+    check_in_at: datetime | None = None,
+    check_out_at: datetime | None = None,
+) -> CustomerSession:
+    """Move a session to another room/office or correct its notes and times.
+
+    Changing the times of a finished session recomputes its duration and the
+    hours deducted, keeping the customer's balance in step.
+    """
+    if "room_id" in fields or "office_id" in fields:
+        if room_id:
+            room = db.get(Room, room_id)
+            if not room or room.deleted_at:
+                raise ValueError("الغرفة غير موجودة")
+        if office_id:
+            office = db.get(Office, office_id)
+            if not office or office.deleted_at:
+                raise ValueError("المكتب غير موجود")
+        session.room_id = room_id
+        session.office_id = None if room_id else office_id
+
+    if "notes" in fields:
+        session.notes = notes or None
+
+    times_changed = False
+    if "check_in_at" in fields and check_in_at:
+        session.check_in_at = check_in_at
+        times_changed = True
+    if "check_out_at" in fields and check_out_at:
+        if session.check_out_at is None:
+            raise ValueError("سجّل الانصراف أولًا ثم عدّل وقته")
+        session.check_out_at = check_out_at
+        times_changed = True
+
+    if session.check_out_at:
+        start = session.check_in_at if session.check_in_at.tzinfo else session.check_in_at.replace(tzinfo=timezone.utc)
+        end = session.check_out_at if session.check_out_at.tzinfo else session.check_out_at.replace(tzinfo=timezone.utc)
+        if end <= start:
+            raise ValueError("وقت الانصراف يجب أن يكون بعد وقت الحضور")
+        if times_changed:
+            seconds = session_duration_seconds(start, end)
+            hours = calculate_billable_hours(duration_seconds=seconds)
+            session.duration_minutes = max(seconds // 60, 1)
+            session.hours_deducted = hours
+            tx = db.get(HoursTransaction, session.hours_transaction_id) if session.hours_transaction_id else None
+            if tx:
+                tx.amount = -hours
+            elif hours > 0:
+                tx = add_hours_transaction(
+                    db, customer_id=session.customer_id, amount=-hours,
+                    transaction_type=HoursTransactionType.USAGE.value,
+                    reason="تعديل جلسة حضور", reference_type="session", reference_id=session.id,
+                    created_by=staff_id, allow_negative=True,
+                )
+                session.hours_transaction_id = tx.id
+    db.flush()
+    return session
 
 
 def session_to_dict(

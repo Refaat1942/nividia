@@ -42,7 +42,16 @@ def hours_report(
         q = q.where(func.date(HoursTransaction.created_at) >= start)
     if end:
         q = q.where(func.date(HoursTransaction.created_at) <= end)
-    return {"items": db.scalars(q.order_by(HoursTransaction.created_at.desc())).all()}
+    rows = db.scalars(q.order_by(HoursTransaction.created_at.desc())).all()
+    names = dict(db.execute(select(Customer.id, Customer.full_name)).all())
+    return {"items": [
+        {
+            "id": str(t.id), "customer_id": str(t.customer_id), "customer_name": names.get(t.customer_id),
+            "amount": float(t.amount), "transaction_type": t.transaction_type, "reason": t.reason,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        }
+        for t in rows
+    ]}
 
 
 @router.get("/revenue")

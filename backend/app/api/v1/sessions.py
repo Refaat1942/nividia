@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -18,6 +18,7 @@ from app.services.sessions import (
     get_customer_session_summary,
     session_to_dict,
     space_names,
+    update_session,
 )
 from app.services.spaces import sync_bookable_offices_to_rooms
 
@@ -33,6 +34,14 @@ class CheckInRequest(BaseModel):
 
 class CheckOutRequest(BaseModel):
     notes: str | None = None
+
+
+class SessionUpdate(BaseModel):
+    room_id: uuid.UUID | None = None
+    office_id: uuid.UUID | None = None
+    notes: str | None = None
+    check_in_at: datetime | None = None
+    check_out_at: datetime | None = None
 
 
 @router.get("")
@@ -207,6 +216,27 @@ def session_check_in(data: CheckInRequest, request: Request, db: DbSession, user
     )
     db.commit()
     db.refresh(session)
+    return session_to_dict(session, customer, include_live=True, names=space_names(db))
+
+
+@router.patch("/{session_id}")
+def edit_session(session_id: uuid.UUID, data: SessionUpdate, request: Request, db: DbSession, user: CurrentUser):
+    """Move a present customer to another room, or correct a session's notes/times."""
+    session = db.get(CustomerSession, session_id)
+    if not session:
+        raise HTTPException(404, "الجلسة غير موجودة")
+    old = {"room_id": str(session.room_id or session.office_id or ""), "check_in_at": str(session.check_in_at),
+           "check_out_at": str(session.check_out_at)}
+    try:
+        update_session(db, session, staff_id=user.id, fields=data.model_fields_set, **data.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    log_audit(db, user_id=user.id, action="update", module="sessions", record_id=str(session_id),
+              old_value=old, new_value=data.model_dump(mode="json", exclude_unset=True),
+              ip_address=get_client_ip(request))
+    db.commit()
+    db.refresh(session)
+    customer = db.get(Customer, session.customer_id)
     return session_to_dict(session, customer, include_live=True, names=space_names(db))
 
 

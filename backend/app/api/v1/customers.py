@@ -2,9 +2,11 @@ import io
 import math
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, or_, select
 
@@ -46,7 +48,7 @@ def list_customers(
     db: DbSession,
     user: CurrentUser,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=1000),
     search: str | None = None,
     status: str | None = None,
 ):
@@ -147,6 +149,33 @@ def create_customer(data: CustomerCreate, request: Request, db: DbSession, user:
     db.commit()
     db.refresh(customer)
     return customer
+
+
+class HoursTransactionUpdate(BaseModel):
+    amount: float | None = None
+    reason: str | None = None
+
+
+@router.patch("/hours-transactions/{transaction_id}")
+def update_hours_transaction(
+    transaction_id: uuid.UUID, data: HoursTransactionUpdate, request: Request, db: DbSession, user: CurrentUser,
+):
+    tx = db.get(HoursTransaction, transaction_id)
+    if not tx:
+        raise HTTPException(404, "العملية غير موجودة")
+    old = {"amount": float(tx.amount), "reason": tx.reason}
+    if data.amount is not None:
+        tx.amount = Decimal(str(data.amount))
+        for session in db.scalars(
+            select(CustomerSession).where(CustomerSession.hours_transaction_id == transaction_id)
+        ).all():
+            session.hours_deducted = -tx.amount
+    if "reason" in data.model_fields_set:
+        tx.reason = data.reason or None
+    log_audit(db, user_id=user.id, action="update", module="hours", record_id=str(transaction_id),
+              old_value=old, new_value=data.model_dump(exclude_unset=True), ip_address=get_client_ip(request))
+    db.commit()
+    return {"id": str(tx.id), "amount": float(tx.amount), "reason": tx.reason}
 
 
 @router.delete("/hours-transactions/{transaction_id}")
